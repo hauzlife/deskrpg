@@ -207,7 +207,9 @@ export async function resolveChannelBoard(channelId: string): Promise<ResolvedCh
     fetchImpl: transportFetch,
   });
   const pluginGate = await gateAutomationPlugin(binding.resource, ownerToken);
-  return { ok: true, binding, ownerClient, boardSlug: channelBoardSlug(channelId), pluginGate };
+  const carrier = await getChannelBoard(channelId);
+  const boardSlug = carrier?.boardSlug ?? channelBoardSlug(channelId);
+  return { ok: true, binding, ownerClient, boardSlug, pluginGate };
 }
 
 /**
