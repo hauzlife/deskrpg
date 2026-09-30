@@ -1,88 +1,83 @@
-# Matriz de Integração e Topologia dos Perfis (39 Almas nos 7 Canais)
+# Matriz Definitiva de Integração e Topologia dos Perfis (39 Almas nos 7 Canais)
 
 Documento oficial de distribuição, interconexão e presença dos perfis (NPCs) da HIVE através dos 7 mundos temáticos do DeskRPG.
 
 ---
 
-## 1. Classificação Estrutural das 39 Almas
+## 1. As 4 Camadas de Mobilidade Operacional
 
-Para garantir que o fluxo de trabalho não tenha silos rígidos nem ruído generalizado, as 39 almas estão divididas em **três categorias de mobilidade**:
-
-1. **Tríade Universal (3 perfis — 7 mundos):** Presentes em todos os canais para garantir coordenação, revisão de qualidade e auditoria de entrega contínua.
-2. **Coringas Setoriais (8 perfis — 2 a 3 mundos):** Almas conectoras que transitam entre áreas correlatas (ex: Engenharia ↔ Produto ↔ Operações).
-3. **Especialistas Verticais (28 perfis — 1 mundo exclusivo):** Foco técnico estrito dentro do seu departamento de domínio, sem dispersão de contexto.
+1. **Quarteto Universal de Governança (4 perfis — 7 mundos):** Presentes em todos os canais para garantir decomposição, fluxo de Kanban, revisão técnica e auditoria de aceite contínua.
+2. **Liderança C-Suite Descentralizada (9 perfis — C-Suite + Fronteiras):** Os diretores executivos têm presença no Conselho (C-Suite) e assento direto nas operações de seus respectivos domínios técnicos e de negócio.
+3. **Coringas de Execução & Conexão (8 perfis — 2 a 3 mundos):** Especialistas transicionais que conectam Produto ↔ Engenharia ↔ Operações ↔ Infraestrutura.
+4. **Especialistas Verticais de Entrega (18 perfis — 1 mundo exclusivo):** Engenheiros, designers, cientistas e pesquisadores com foco cirúrgico em sua área, sem dispersão de contexto.
 
 ---
 
-## 2. Matriz Consolidada de Presença por Canal
+## 2. Matriz Definitiva de Presença por Canal
 
-| Papel (NPC) | Categoria | C-Suite | Engineering | Product | Operations | Creative/GTM | Infrastructure | Knowledge | Salas Ativas Principais |
+| Papel (NPC) | Camada Operacional | C-Suite | Engineering | Product | Operations | Creative/GTM | Infrastructure | Knowledge | Salas Ativas Principais |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`orchestrator`** | **Tríade Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Todas as salas + Ops Control |
-| **`reviewer`** | **Tríade Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Dev Lab, War Room, Boardroom |
-| **`verifier`** | **Tríade Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | War Room, Dev Lab, Incident Resp |
-| **`implementation-planner`** | **Coringa Setorial** | — | ✓ | ✓ | ✓ | — | — | — | Dev Lab, Product Office, Ops Control |
-| **`product-manager`** | **Coringa Setorial** | — | ✓ | ✓ | ✓ | — | — | — | Product Office, Ops Control, Dev Lab |
-| **`technical-architect`** | **Coringa Setorial** | — | ✓ | ✓ | — | — | ✓ | — | Dev Lab, Product Office, NOC |
-| **`technical-writer`** | **Coringa Setorial** | — | ✓ | ✓ | — | ✓ | — | — | Meeting Room, Product Office, Campaigns |
-| **`qa-engineer`** | **Coringa Setorial** | — | ✓ | — | ✓ | — | — | — | Dev Lab, War Room |
-| **`security-engineer`** | **Coringa Setorial** | — | ✓ | — | — | — | ✓ | — | Dev Lab, Incident Response, NOC |
-| **`site-reliability-engineer`** | **Coringa Setorial** | — | — | — | ✓ | — | ✓ | — | War Room, NOC, Incident Response |
-| **`chief-of-staff`** | **Coringa Setorial** | ✓ | — | — | ✓ | — | — | — | CFO Suite, Boardroom, Ops Control |
+| **`orchestrator`** | **Governança Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Todas as salas + Ops Control |
+| **`kanban-strategist`** | **Governança Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Todas as salas + Boardroom |
+| **`reviewer`** | **Governança Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Dev Lab, War Room, Boardroom |
+| **`verifier`** | **Governança Universal** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | War Room, Dev Lab, Incident Resp |
+| **`cto`** | **Liderança Executiva** | ✓ | ✓ | — | — | — | ✓ | — | Boardroom, Dev Lab, NOC |
+| **`cpo`** | **Liderança Executiva** | ✓ | — | ✓ | — | — | — | — | Boardroom, Product Office |
+| **`cmo`** | **Liderança Executiva** | ✓ | — | — | — | ✓ | — | — | Boardroom, Campaigns, Studio |
+| **`coo`** | **Liderança Executiva** | ✓ | — | — | ✓ | — | — | — | CFO Suite, Ops Control |
+| **`cfo`** | **Liderança Executiva** | ✓ | — | — | ✓ | — | — | — | CFO Suite, Ops Control |
+| **`chief-of-staff`** | **Liderança Executiva** | ✓ | — | — | ✓ | — | — | — | Boardroom, CFO Suite, Ops Control |
+| **`ceo`** | **Liderança Executiva** | ✓ | — | — | — | — | — | — | Boardroom, CFO Suite |
+| **`clo`** | **Liderança Executiva** | ✓ | — | — | — | — | — | — | CFO Suite, Boardroom |
+| **`chro`** | **Liderança Executiva** | ✓ | — | — | — | — | — | — | Boardroom |
+| **`product-manager`** | **Coringa de Execução** | — | ✓ | ✓ | ✓ | — | — | — | Product Office, Ops Control, Dev Lab |
+| **`implementation-planner`** | **Coringa de Execução** | — | ✓ | ✓ | ✓ | — | — | — | Product Office, Ops Control, Dev Lab |
+| **`technical-architect`** | **Coringa de Execução** | — | ✓ | ✓ | — | — | ✓ | — | Dev Lab, Product Office, NOC |
+| **`technical-writer`** | **Coringa de Execução** | — | ✓ | ✓ | — | ✓ | — | — | Meeting Room, Product Office, Campaigns |
+| **`qa-engineer`** | **Coringa de Execução** | — | ✓ | — | ✓ | — | — | — | Dev Lab, War Room |
+| **`security-engineer`** | **Coringa de Execução** | — | ✓ | — | — | — | ✓ | — | Dev Lab, NOC, Incident Response |
+| **`site-reliability-engineer`** | **Coringa de Execução** | — | — | — | ✓ | — | ✓ | — | War Room, NOC, Incident Response |
+| **`researcher`** | **Coringa de Execução** | — | — | ✓ | — | ✓ | — | ✓ | Deep Thought, Product Office, Campaigns |
+| **`backend-engineer`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Dev Lab, Meeting Room |
+| **`frontend-engineer`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Dev Lab |
+| **`debugger`** | **Especialista Vertical** | — | ✓ | — | ✓ | — | ✓ | — | Dev Lab, War Room, NOC |
+| **`data-architect`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Dev Lab, Meeting Room |
+| **`data-engineer`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Meeting Room |
+| **`data-scientist`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Meeting Room |
+| **`ml-engineer`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Meeting Room |
+| **`platform-engineer`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Meeting Room |
+| **`oss-contributor`** | **Especialista Vertical** | — | ✓ | — | — | — | — | — | Dev Lab |
+| **`brand-designer`** | **Especialista Vertical** | — | — | — | — | ✓ | — | — | Studio |
+| **`copy-editor`** | **Especialista Vertical** | — | — | — | — | ✓ | — | — | Studio, Campaigns |
+| **`seo-specialist`** | **Especialista Vertical** | — | — | — | — | ✓ | — | — | Campaigns |
+| **`writer`** | **Especialista Vertical** | — | — | — | — | ✓ | — | — | Studio, Campaigns |
+| **`ux-designer`** | **Especialista Vertical** | — | — | ✓ | — | — | — | — | Brainstorm Room |
+| **`editor`** | **Especialista Vertical** | — | — | ✓ | — | — | — | — | Brainstorm Room |
+| **`spec-driven-development`** | **Especialista Vertical** | — | ✓ | ✓ | — | — | — | — | Product Office, Dev Lab |
+| **`curator`** | **Especialista Vertical** | — | — | — | — | — | — | ✓ | Library, Deep Thought |
+| **`wonderer`** | **Especialista Vertical** | — | — | — | — | — | — | ✓ | Deep Thought |
 
 ---
 
-## 3. Especialistas Verticais (28 Almas Fixadas em 1 Único Canal)
+## 3. Dinâmica das Conexões Críticas
 
-Estes especialistas trabalham com exclusividade nos boards e salas de seu departamento de origem:
-
-### A. C-Suite (7 Especialistas Exclusivos)
-- `ceo` *(Direção executiva)* | `cto` *(Estratégia de tecnologia)* | `cfo` *(Alocação de capital e runway)*
-- `coo` *(Eficiência operacional)* | `cmo` *(Estratégia de crescimento)* | `clo` *(Risco jurídico e compliance)*
-- `chro` *(Cultura e pessoas)* | `cpo` *(Visão de produto)*
-
-### B. Engineering (7 Especialistas Exclusivos)
-- `backend-engineer` *(APIs e regras de negócio)* | `frontend-engineer` *(Interfaces e componentes)*
-- `platform-engineer` *(Pipelines e tooling)* | `debugger` *(Diagnóstico cirúrgico de erros)*
-- `data-architect` *(Modelagem de dados e schema)* | `data-engineer` *(ETL e ingestão de dados)*
-- `data-scientist` *(Modelos e inferência)* | `ml-engineer` *(MLOps e tensores)*
-- `oss-contributor` *(Higiene open-source)*
-
-### C. Product (4 Especialistas Exclusivos)
-- `ux-designer` *(Fluxos visuais e protótipos)* | `researcher` *(Pesquisa de usuários e mercado)*
-- `editor` *(Coerência editorial de produto)* | `spec-driven-development` *(Critérios formais SDD)*
-
-### D. Operations (1 Especialista Exclusivo)
-- `kanban-strategist` *(Governança de WIP, limites de fluxo e cadência)*
-
-### E. Creative/GTM (4 Especialistas Exclusivos)
-- `brand-designer` *(Identidade visual e criativos)* | `copy-editor` *(Copywriting de conversão e microcopy)*
-- `seo-specialist` *(Indexação, tráfego orgânico e sitemaps)* | `writer` *(Artigos e conteúdo de marca)*
-
-### F. Knowledge (2 Especialistas Exclusivos)
-- `curator` *(SSOT, base de conhecimento e indexação do vault)*
-- `wonderer` *(Pesquisa exploratória e conexões interdisciplinares)*
+- **O Quarteto de Governança Universal (`Orchestrator`, `Kanban-Strategist`, `Reviewer`, `Verifier`):**  
+  Presente nos 7 mundos. Não importa em qual canal você ou a equipe estejam: o quarteto decompõe, monitora limites de WIP no Kanban, audita o código e valida as entregas.
+- **CTO em Engenharia & NOC:**  
+  Não fica preso em reunião de diretoria; atua direto com o `technical-architect` e com os devs nos incidentes de alta gravidade.
+- **CMO em Creative/GTM:**  
+  Lidera as salas de `Campaigns` e `Studio`, validando o posicionamento das marcas e funis ao lado de copywriters e designers.
+- **CPO em Product:**  
+  Pilota a visão de produto e roadmap junto com o `product-manager` e `researcher`.
+- **COO & CFO em Operations:**  
+  Garantem que a eficiência operacional e o controle de custos andem juntos com a velocidade de despacho.
+- **Researcher em Knowledge & Produto:**  
+  Alimenta tanto a esteira de features em Product quanto as teses de longo prazo com o `curator` e `wonderer`.
 
 ---
 
-## 4. Como os Perfis Interagem nos Canais e Salas
+## 4. Status de Implementação Física
 
-1. **Nas Salas `Office` (Whole Office):**
-   - Todos os NPCs alocados no canal escutam os comunicados gerais sob política `'mention'`.
-   - Evita ruído e respostas desnecessárias; respondem apenas quando chamados via `@perfil`.
-
-2. **Nas Salas Temáticas (`Dev Lab`, `War Room`, `Ops Control`, `Boardroom`, etc.):**
-   - Política `'members'`: Os membros da sala dialogam ativamente e colaboram na resolução das tarefas.
-   - Quando um card técnico é criado em **Ops Control**, os coringas (`implementation-planner`, `product-manager`) alinham a entrega e o `orchestrator` despacha diretamente para os especialistas no **Dev Lab** de Engineering.
-
-3. **Garantia de Não-Isolamento:**
-   - Como a **Tríade Universal** e os **Coringas Setoriais** estão presentes nas fronteiras dos canais, nenhuma demanda fica perdida ou isolada em um mundo sem acompanhamento.
-
----
-
-## 5. Resumo da Execução Técnica
-
-- **26 novas instâncias de NPCs** criadas e amarradas aos perfis do Hermes.
-- **57 vínculos de salas (`chat_room_members`)** configurados para acesso granular aos chats temáticos.
-- **Auto-seating 3D (`placeUnplacedNpcs`)**: 100% dos NPCs posicionados em mesas/estações (zero coordenadas nulas).
-- **Consistência de dados**: Verificado em banco e sincronizado no repositório oficial (`hauzlife/deskrpg`).
+- **Banco de Dados SQLite (`deskrpg.db`)**: 100% sincronizado com vínculos em `npcs` e `chat_room_members`.
+- **Auto-Seating 3D**: Todos os agentes posicionados em estações e cadeiras nos 7 mundos temáticos.
+- **Repositório Git**: Commitado e enviado para `origin/custom` no GitHub.
