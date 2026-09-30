@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400">
+  <defs>
+    <linearGradient id="badgeDark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1b382b"/>
+      <stop offset="100%" stop-color="#234638"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="900" height="400" fill="#f8faf9" stroke="#d9e7dd" stroke-width="2"/>
+
+  <text x="40" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="800" fill="#09223f">DeskRPG Conversion &amp; Trust Badges Suite</text>
+
+  <!-- Row 1: Badges -->
+  <g transform="translate(40, 75)">
+    <!-- Badge 1: Hostinger One Click -->
+    <g transform="translate(0, 0)">
+      <rect width="250" height="60" rx="8" fill="#09223f"/>
+      <circle cx="30" cy="30" r="14" fill="#673ab7"/>
+      <text x="24" y="36" font-family="sans-serif" font-size="16" font-weight="bold" fill="#ffffff">H</text>
+      <text x="56" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#93c5fd">OFFICIAL PARTNER</text>
+      <text x="56" y="46" font-family="sans-serif" font-size="14" font-weight="800" fill="#ffffff">Hostinger 1-Click VPS</text>
+    </g>
+
+    <!-- Badge 2: Hermes Native -->
+    <g transform="translate(280, 0)">
+      <rect width="250" height="60" rx="8" fill="#1b382b"/>
+      <circle cx="30" cy="30" r="14" fill="#365e4b"/>
+      <text x="24" y="36" font-family="sans-serif" font-size="16" font-weight="bold" fill="#4ade80">⚡</text>
+      <text x="56" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#86efac">POWERED BY</text>
+      <text x="56" y="46" font-family="sans-serif" font-size="14" font-weight="800" fill="#ffffff">Hermes Agent Native</text>
+    </g>
+
+    <!-- Badge 3: Privacy First -->
+    <g transform="translate(560, 0)">
+      <rect width="250" height="60" rx="8" fill="#ffffff" stroke="#365e4b" stroke-width="2"/>
+      <circle cx="30" cy="30" r="14" fill="#e6eee2"/>
+      <text x="24" y="36" font-family="sans-serif" font-size="16" font-weight="bold" fill="#365e4b">🔒</text>
+      <text x="56" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#526b5e">SELF-HOSTED</text>
+      <text x="56" y="46" font-family="sans-serif" font-size="14" font-weight="800" fill="#09223f">100% Zero Telemetry</text>
+    </g>
+  </g>
+
+  <!-- Row 2: Secondary Trust Seals -->
+  <g transform="translate(40, 165)">
+    <!-- Seal 1: 39 Autonomous Souls -->
+    <g transform="translate(0, 0)">
+      <rect width="250" height="60" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+      <text x="20" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#166534">AUTONOMOUS ORCHESTRATION</text>
+      <text x="20" y="47" font-family="sans-serif" font-size="14" font-weight="800" fill="#14532d">39 Souls · 70 Cron Blueprints</text>
+    </g>
+
+    <!-- Seal 2: Multiplayer 3D -->
+    <g transform="translate(280, 0)">
+      <rect width="250" height="60" rx="8" fill="#f5f3ff" stroke="#c084fc" stroke-width="1.5"/>
+      <text x="20" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#6b21a8">MULTIPLAYER OFFICE</text>
+      <text x="20" y="47" font-family="sans-serif" font-size="14" font-weight="800" fill="#581c87">5 Curated Environments</text>
+    </g>
+
+    <!-- Seal 3: Docker & Compose -->
+    <g transform="translate(560, 0)">
+      <rect width="250" height="60" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+      <text x="20" y="26" font-family="sans-serif" font-size="11" font-weight="700" fill="#1e40af">DEPLOYMENT STANDARD</text>
+      <text x="20" y="47" font-family="sans-serif" font-size="14" font-weight="800" fill="#1e3a8a">Traefik + Docker Compose</text>
+    </g>
+  </g>
+
+  <!-- Row 3: Standard CTA Buttons -->
+  <g transform="translate(40, 260)">
+    <text x="0" y="20" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="700" fill="#09223f">Standard Conversion CTA Buttons (8px Radius Cap)</text>
+    
+    <g transform="translate(0, 35)">
+      <!-- Primary Green Button -->
+      <rect width="180" height="44" rx="8" fill="#365e4b"/>
+      <text x="35" y="27" font-family="sans-serif" font-size="14" font-weight="700" fill="#ffffff">Deploy to VPS →</text>
+
+      <!-- Light Green Hover/Active -->
+      <g transform="translate(200, 0)">
+        <rect width="180" height="44" rx="8" fill="#426c54"/>
+        <text x="35" y="27" font-family="sans-serif" font-size="14" font-weight="700" fill="#ffffff">Active / Hover</text>
+      </g>
+
+      <!-- Neon Accent Button -->
+      <g transform="translate(400, 0)">
+        <rect width="180" height="44" rx="8" fill="#4ade80"/>
+        <text x="38" y="27" font-family="sans-serif" font-size="14" font-weight="800" fill="#09223f">1-Click Launch ⚡</text>
+      </g>
+
+      <!-- Muted Secondary Button -->
+      <g transform="translate(600, 0)">
+        <rect width="180" height="44" rx="8" fill="#e6eee2" stroke="#365e4b" stroke-width="1"/>
+        <text x="38" y="27" font-family="sans-serif" font-size="14" font-weight="700" fill="#365e4b">View Live Demo</text>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">
+  <defs>
+    <linearGradient id="sqBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#09223f"/>
+      <stop offset="40%" stop-color="#133327"/>
+      <stop offset="100%" stop-color="#234638"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1080" height="1080" fill="url(#sqBg)"/>
+
+  <!-- Top Logo & Header -->
+  <g transform="translate(80, 80)">
+    <rect width="60" height="60" rx="14" fill="#365e4b"/>
+    <text x="18" y="42" font-family="sans-serif" font-size="34" font-weight="900" fill="#4ade80">D</text>
+    <text x="80" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="36" font-weight="800" fill="#ffffff">DeskRPG</text>
+    <text x="250" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="500" fill="#a3b899">for Hermes Agent</text>
+  </g>
+
+  <!-- Central Title -->
+  <g transform="translate(80, 220)">
+    <rect width="320" height="42" rx="8" fill="#4ade80" fill-opacity="0.15"/>
+    <text x="18" y="28" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" font-weight="700" fill="#4ade80" letter-spacing="2">NEXT-GEN AGENT WORKSPACE</text>
+
+    <text x="0" y="110" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="64" font-weight="900" fill="#ffffff" line-height="1.1">
+      <tspan x="0" dy="0">Your AI Agents</tspan>
+      <tspan x="0" dy="80" fill="#4ade80">Sitting at Real Desks.</tspan>
+      <tspan x="0" dy="80">Working in Real Time.</tspan>
+    </text>
+  </g>
+
+  <!-- Interactive Graphic Center Stage -->
+  <g transform="translate(80, 520)">
+    <rect width="920" height="320" rx="12" fill="#eff7f1" stroke="#d9e7dd" stroke-width="3"/>
+    
+    <!-- Title Bar -->
+    <rect width="920" height="46" rx="12" fill="#d9e7dd"/>
+    <rect y="36" width="920" height="10" fill="#d9e7dd"/>
+    <circle cx="28" cy="23" r="6" fill="#ef4444"/>
+    <circle cx="48" cy="23" r="6" fill="#f59e0b"/>
+    <circle cx="68" cy="23" r="6" fill="#10b981"/>
+    <text x="360" y="28" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="700" fill="#09223f">HQ SIMULATION: 39 SOULS CONNECTED</text>
+
+    <!-- Grid Columns inside card -->
+    <g transform="translate(40, 70)">
+      <!-- Col 1: Roster -->
+      <rect width="250" height="210" rx="8" fill="#ffffff" stroke="#d9e7dd"/>
+      <text x="20" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" fill="#365e4b">ACTIVE PROFILES</text>
+      <text x="20" y="65" font-family="monospace" font-size="13" fill="#09223f">● orchestrator</text>
+      <text x="20" y="95" font-family="monospace" font-size="13" fill="#09223f">● brand-designer</text>
+      <text x="20" y="125" font-family="monospace" font-size="13" fill="#09223f">● cmo</text>
+      <text x="20" y="155" font-family="monospace" font-size="13" fill="#09223f">● seo-specialist</text>
+      <text x="20" y="185" font-family="monospace" font-size="13" fill="#09223f">● copy-editor</text>
+
+      <!-- Col 2: Live Meeting -->
+      <g transform="translate(280, 0)">
+        <rect width="270" height="210" rx="8" fill="#ffffff" stroke="#d9e7dd"/>
+        <text x="20" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" fill="#735b8f">MEETING IN SESSION</text>
+        <rect x="20" y="50" width="230" height="60" rx="6" fill="#f5f3ff"/>
+        <text x="30" y="75" font-family="sans-serif" font-size="12" font-weight="600" fill="#5b21b6">"Reviewing conversion copy &amp;</text>
+        <text x="30" y="95" font-family="sans-serif" font-size="12" font-weight="600" fill="#5b21b6">Q4 brand alignment"</text>
+        
+        <rect x="20" y="125" width="230" height="65" rx="6" fill="#f0fdf4"/>
+        <text x="30" y="148" font-family="monospace" font-size="11" fill="#166534">Outcome: Minutes Drafted</text>
+        <text x="30" y="168" font-family="monospace" font-size="11" fill="#166534">Handoff: gtm-ops verified</text>
+      </g>
+
+      <!-- Col 3: Kanban Card -->
+      <g transform="translate(580, 0)">
+        <rect width="250" height="210" rx="8" fill="#ffffff" stroke="#d9e7dd"/>
+        <text x="20" y="32" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" fill="#09223f">BOARD DISPATCH</text>
+        <rect x="16" y="50" width="218" height="75" rx="6" fill="#e6eee2"/>
+        <text x="28" y="75" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#234638">t_d398a2df: Visual Kits</text>
+        <text x="28" y="95" font-family="monospace" font-size="11" fill="#365e4b">Status: Running (Goal Mode)</text>
+        <text x="28" y="112" font-family="monospace" font-size="11" fill="#365e4b">Brand assets ready</text>
+
+        <rect x="16" y="140" width="218" height="45" rx="6" fill="#09223f"/>
+        <text x="38" y="167" font-family="monospace" font-size="12" font-weight="bold" fill="#4ade80">100% AUTOMATED</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom CTA Footer -->
+  <g transform="translate(80, 910)">
+    <rect width="320" height="70" rx="8" fill="#4ade80"/>
+    <text x="50" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="800" fill="#09223f">Deploy in 1-Click →</text>
+    
+    <g transform="translate(420, 15)">
+      <text x="0" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="700" fill="#ffffff">deskrpg.com</text>
+      <text x="0" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" fill="#a3b899">Hostinger Catalog Partner · Open Source on GitHub</text>
+    </g>
+  </g>
+</svg>
