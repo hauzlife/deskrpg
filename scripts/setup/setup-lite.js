@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const ROOT = path.join(__dirname, "..");
+const ROOT = path.join(__dirname, "..", "..");
 const ENV_FILE = path.join(ROOT, ".env.local");
 const ENV_EXAMPLE = path.join(ROOT, ".env.example");
 

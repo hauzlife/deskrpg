@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Mic, MicOff, Loader2 } from "lucide-react";
 import { accentClasses, type ChatAccent } from "./chat-accent";
 import { useT } from "@/lib/i18n";
 import MentionEditor, { type MentionEditorHandle } from "./mention-input/MentionEditor";
@@ -67,7 +68,67 @@ export default function ChatInput({
     [controlled, onValueChange],
   );
 
-  // Auto-resize textarea
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+        stream.getTracks().forEach((track) => track.stop());
+        setIsTranscribing(true);
+        try {
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.wav");
+          const res = await fetch("/api/stt", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.text) {
+            updateDraft(draft ? `${draft} ${data.text}` : data.text);
+          }
+        } catch (err) {
+          console.error("STT error:", err);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Microphone access error:", err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      void startRecording();
+    }
+  };
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -244,6 +305,29 @@ export default function ChatInput({
             style={{ maxHeight: "120px" }}
           />
         )}
+
+        {/* Mic button (MLX Metal STT) */}
+        <button
+          type="button"
+          onClick={toggleRecording}
+          disabled={disabled || isTranscribing}
+          title={isRecording ? "Parar gravação" : isTranscribing ? "Transcrevendo via Metal..." : "Gravar voz (STT Metal)"}
+          className={`p-2 rounded-lg shrink-0 self-end transition-colors border ${
+            isRecording
+              ? "bg-danger text-white border-danger animate-pulse"
+              : isTranscribing
+                ? "bg-surface-raised text-text-dim border-border cursor-wait"
+                : "bg-surface-raised text-text hover:bg-surface border-border"
+          }`}
+        >
+          {isTranscribing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : isRecording ? (
+            <MicOff className="w-4 h-4" />
+          ) : (
+            <Mic className="w-4 h-4" />
+          )}
+        </button>
 
         {/* Send button — a stop button while a reply is running */}
         {onStop ? (

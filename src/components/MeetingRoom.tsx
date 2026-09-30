@@ -518,6 +518,16 @@ export default function MeetingRoom({
             content: sanitizeClientFinalSpeech(result.finalizedMessage.content),
           };
           setMessages((msgs) => appendMeetingMessage(msgs, finalizedMessage));
+
+          if (typeof window !== "undefined" && "speechSynthesis" in window && finalizedMessage.content) {
+            try {
+              const utterance = new SpeechSynthesisUtterance(finalizedMessage.content);
+              utterance.lang = "pt-BR";
+              window.speechSynthesis.speak(utterance);
+            } catch {
+              /* ignore speech synthesis errors */
+            }
+          }
         }
         setCurrentSpeaker(null);
       } else {
