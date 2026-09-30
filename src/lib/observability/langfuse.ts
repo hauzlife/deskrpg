@@ -81,6 +81,7 @@ export interface NpcTraceContext {
   multiParty?: boolean;
   prompt: string;
   instructions?: string;
+  conversationHistory?: Array<unknown>;
   metadata?: Record<string, unknown>;
   tags?: string[];
 }
@@ -123,6 +124,7 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
       input: {
         prompt: ctx.prompt,
         instructions: ctx.instructions,
+        conversationHistory: ctx.conversationHistory,
       },
       metadata: {
         ...ctx.metadata,
@@ -135,7 +137,10 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
 
     const generation = trace.generation({
       name: `generation: ${ctx.name}`,
-      input: ctx.prompt,
+      input: {
+        prompt: ctx.prompt,
+        conversationHistory: ctx.conversationHistory,
+      },
       modelParameters: ctx.instructions ? { instructions: ctx.instructions } : undefined,
     });
 

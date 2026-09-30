@@ -48,12 +48,14 @@ export class HermesAdapter implements NpcAdapter {
         const name = typeof event.data.tool_name === "string" ? event.data.tool_name : "";
         options.onToolProgress?.(name, "");
         if (event.event === "tool.started") {
-          trace?.onToolCall(name, event.data.tool_input);
+          const toolInput = event.data.tool_input ?? event.data.args ?? event.data.preview ?? { invoked: true };
+          trace?.onToolCall(name, toolInput);
         }
       }
       if (event.event === "tool.completed") {
         const name = typeof event.data.tool_name === "string" ? event.data.tool_name : "";
-        trace?.onToolComplete(name, event.data.tool_output);
+        const toolOutput = event.data.tool_output ?? event.data.result ?? { completed: true };
+        trace?.onToolComplete(name, toolOutput);
       }
     };
   }
@@ -68,6 +70,7 @@ export class HermesAdapter implements NpcAdapter {
       multiParty: options.multiParty,
       prompt: options.prompt,
       instructions: options.instructions,
+      conversationHistory: options.conversationHistory,
     });
     const onEvent = this.relay(options, trace);
 
