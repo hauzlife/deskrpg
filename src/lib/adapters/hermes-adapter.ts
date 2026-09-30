@@ -8,6 +8,7 @@
 import { HermesClient } from "@/lib/hermes/hermes-client";
 import type { SseEvent } from "@/lib/hermes/sse";
 import { parseApprovalEvent } from "@/lib/tool-approval-event";
+import { startNpcTrace } from "@/lib/observability/langfuse";
 import type {
   AdapterExecuteOptions,
   AdapterHealthResult,
@@ -27,34 +28,18 @@ export class HermesAdapter implements NpcAdapter {
     this.sessionId = opts?.sessionId ?? null;
   }
 
-  private relay(options: AdapterExecuteOptions) {
+  private relay(options: AdapterExecuteOptions, trace?: ReturnType<typeof startNpcTrace>) {
     return (event: SseEvent) => {
       if (typeof event.data.run_id === "string" && event.data.run_id !== this.lastRunId) {
         this.lastRunId = event.data.run_id;
         options.onRunStarted?.(event.data.run_id);
       }
-      // The two endpoints use different delta event names (measured live, v0.20.2):
-      //   1:1     /api/sessions/<id>/chat/stream → assistant.delta
-      //   meeting /v1/runs/<id>/events           → message.delta
-      // Because only assistant.* was being watched, onDelta was never called even once in
-      // meetings. The response itself arrived via execute()'s return value, so the NPC spoke
-      // fine, but with no streaming chunks the client's stream buffer stayed empty and there
-      // was no bubble to finalize even when done:true arrived — the meeting ran completely
-      // normally while the screen stayed blank.
       if (
         (event.event === "assistant.delta" || event.event === "message.delta") &&
         typeof event.data.delta === "string"
       ) {
         options.onDelta?.(event.data.delta);
       }
-      // Real tool use comes through as tool.started / tool.completed. Looking only at
-      // tool.progress shows almost nothing — measured live (2026-08-28, 3 tool uses):
-      // started 3, completed 3, progress was `_thinking` only once.
-      //
-      // preview isn't passed through. tool.progress's `_thinking` preview is the entire
-      // finished answer, and streaming that as a chat chunk used to make the answer show up
-      // twice. Consumers get **only the name**.
-      // Both the 1:1 session stream (Hermes with #58856) and the meeting runs stream carry this.
       if (event.event === "approval.request") {
         const parsed = parseApprovalEvent(event.data);
         if (parsed) options.onApprovalRequest?.(parsed);
@@ -62,12 +47,14 @@ export class HermesAdapter implements NpcAdapter {
       if (event.event === "tool.started" || event.event === "tool.progress") {
         const name = typeof event.data.tool_name === "string" ? event.data.tool_name : "";
         options.onToolProgress?.(name, "");
+        if (event.event === "tool.started") {
+          trace?.onToolCall(name, event.data.tool_input);
+        }
       }
-      // Not cleared by tool.completed. If started and completed cross paths in an instant,
-      // the two state updates get batched together and the intermediate state never
-      // renders — measured live (2026-08-28), web_search was used 3 times and nothing showed
-      // up on screen. Leaving the last tool name in place and clearing it all at once when
-      // the stream ends lets the user see "something's happening" with no gaps.
+      if (event.event === "tool.completed") {
+        const name = typeof event.data.tool_name === "string" ? event.data.tool_name : "";
+        trace?.onToolComplete(name, event.data.tool_output);
+      }
     };
   }
 
@@ -75,45 +62,52 @@ export class HermesAdapter implements NpcAdapter {
     response: string;
     session: AdapterSessionInfo;
   }> {
-    const onEvent = this.relay(options);
-
-    // Runs path: the caller (ConversationEngine) owns and passes the full
-    // transcript, so there is no persisted Hermes session to reuse.
-    // Branch on the explicit multiParty flag, never on "is the history array non-empty":
-    // polls carry no history and the first turn of a meeting has an empty transcript, and
-    // both of those must still stay off the NPC's persisted session.
-    if (options.multiParty) {
-      const { runId } = await this.client.startRun({
-        input: options.prompt,
-        conversationHistory: options.conversationHistory ?? [],
-        instructions: options.instructions,
-        sessionKey: options.sessionKey,
-      });
-      this.lastRunId = runId;
-      options.onRunStarted?.(runId);
-
-      const { text } = await this.client.streamRunEvents(runId, onEvent);
-      return { response: text, session: { sessionRef: options.sessionKey, displayId: runId } };
-    }
-
-    // Session path: 1:1 DM conversations reuse a persisted Hermes session,
-    // creating one on first use.
-    if (!this.sessionId) {
-      const created = await this.client.createSession(options.sessionKey);
-      this.sessionId = created.sessionId;
-    }
-
-    const result = await this.client.streamSessionChat({
-      sessionId: this.sessionId,
-      message: options.prompt,
-      systemMessage: options.instructions,
-      sessionKey: options.sessionKey,
-      onEvent,
+    const trace = startNpcTrace({
+      name: options.sessionKey ?? "hermes-turn",
+      sessionId: options.sessionKey,
+      multiParty: options.multiParty,
+      prompt: options.prompt,
+      instructions: options.instructions,
     });
-    this.sessionId = result.sessionId;
-    this.lastRunId = result.runId;
+    const onEvent = this.relay(options, trace);
 
-    return { response: result.text, session: { sessionRef: result.sessionId } };
+    try {
+      if (options.multiParty) {
+        const { runId } = await this.client.startRun({
+          input: options.prompt,
+          conversationHistory: options.conversationHistory ?? [],
+          instructions: options.instructions,
+          sessionKey: options.sessionKey,
+        });
+        this.lastRunId = runId;
+        options.onRunStarted?.(runId);
+
+        const { text } = await this.client.streamRunEvents(runId, onEvent);
+        trace.finalize(text, { runId });
+        return { response: text, session: { sessionRef: options.sessionKey, displayId: runId } };
+      }
+
+      if (!this.sessionId) {
+        const created = await this.client.createSession(options.sessionKey);
+        this.sessionId = created.sessionId;
+      }
+
+      const result = await this.client.streamSessionChat({
+        sessionId: this.sessionId,
+        message: options.prompt,
+        systemMessage: options.instructions,
+        sessionKey: options.sessionKey,
+        onEvent,
+      });
+      this.sessionId = result.sessionId;
+      this.lastRunId = result.runId;
+
+      trace.finalize(result.text, { sessionId: result.sessionId, runId: result.runId });
+      return { response: result.text, session: { sessionRef: result.sessionId } };
+    } catch (err) {
+      trace.fail(err);
+      throw err;
+    }
   }
 
   async abort(_sessionKey: string): Promise<void> {
