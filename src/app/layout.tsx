@@ -7,6 +7,8 @@ import { normalizeLocale, translateServer } from "@/lib/i18n/server";
 import "./globals.css";
 import "@/game/three/lookbook.css";
 
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://deskrpg.com";
+
 async function getRequestLocale() {
   const cookieStore = await cookies();
   const headerStore = await headers();
@@ -20,6 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
 
   return {
+    metadataBase: new URL(BASE_URL),
     title: translateServer(locale, "metadata.title"),
     description: translateServer(locale, "metadata.description"),
     keywords: translateServer(locale, "metadata.keywords")
@@ -27,10 +30,21 @@ export async function generateMetadata(): Promise<Metadata> {
       .map((keyword) => keyword.trim())
       .filter(Boolean),
     authors: [{ name: "Dante Labs", url: "https://dante-labs.com" }],
+    alternates: {
+      canonical: "./",
+      languages: {
+        "en-US": "/?lang=en",
+        "ko-KR": "/?lang=ko",
+        "ja-JP": "/?lang=ja",
+        "zh-CN": "/?lang=zh",
+        "x-default": "/",
+      },
+    },
     openGraph: {
       title: "DeskRPG for Hermes",
       description: translateServer(locale, "metadata.openGraphDescription"),
       siteName: "DeskRPG for Hermes",
+      url: BASE_URL,
       type: "website",
     },
     icons: {

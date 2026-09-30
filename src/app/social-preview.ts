@@ -62,8 +62,14 @@ export function createPublicShareMetadata(): Metadata {
 export function createAuthShareMetadata(isPublic: boolean): Metadata {
   if (!isPublic) return { robots: { index: false, follow: false } };
 
+  // Strip canonical pointing to root URL to eliminate conflicting signals with noindex
+  const publicMeta = createPublicShareMetadata();
+  const { alternates, ...metaWithoutCanonical } = publicMeta;
+
   return {
-    ...createPublicShareMetadata(),
+    ...metaWithoutCanonical,
+    // Provide self-referencing canonical or omit canonical entirely for non-indexed utility pages
+    alternates: { canonical: `${PUBLIC_URL.replace(/\/$/, "")}/auth` },
     robots: { index: false, follow: false },
   };
 }
@@ -79,6 +85,7 @@ export function createRobotsPolicy(isPublic: boolean): MetadataRoute.Robots {
         "/auth",
         "/api/",
         "/admin/",
+        "/account/",
         "/channels",
         "/characters",
         "/game",
@@ -94,5 +101,21 @@ export function createRobotsPolicy(isPublic: boolean): MetadataRoute.Robots {
 export function createSitemapEntries(isPublic: boolean): MetadataRoute.Sitemap {
   if (!isPublic) return [];
 
-  return [{ url: PUBLIC_URL, changeFrequency: "monthly", priority: 1 }];
+  // Supply explicit lastModified and language alternates to maximize crawl efficiency
+  return [
+    {
+      url: PUBLIC_URL,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 1.0,
+      alternates: {
+        languages: {
+          ko: `${PUBLIC_URL}?lang=ko`,
+          en: `${PUBLIC_URL}?lang=en`,
+          ja: `${PUBLIC_URL}?lang=ja`,
+          zh: `${PUBLIC_URL}?lang=zh`,
+        },
+      },
+    },
+  ];
 }

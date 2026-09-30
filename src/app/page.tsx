@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { verifyJWT } from "@/lib/jwt";
 import AuthPageClient from "./auth/AuthPageClient";
+import JsonLd from "@/components/JsonLd";
 import { createPublicShareMetadata, isPublicLandingEnabled } from "./social-preview";
 
 export function generateMetadata(): Metadata {
@@ -13,7 +14,12 @@ export function generateMetadata(): Metadata {
 
 export default async function Home() {
   if (isPublicLandingEnabled(process.env)) {
-    return <AuthPageClient isComingSoon />;
+    return (
+      <>
+        <JsonLd />
+        <AuthPageClient isComingSoon />
+      </>
+    );
   }
 
   const cookieStore = await cookies();

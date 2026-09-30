@@ -686,9 +686,10 @@ def version_below(value, minimum):
     size = max(len(left), len(right))
     return tuple(left + [0] * (size - len(left))) < tuple(right + [0] * (size - len(right)))
 def read(path):
-    if path.is_symlink(): fail('unsafe_host_path')
-    if path.exists() and path.stat().st_size > 1048576: fail('invalid_host_config')
-    return path.read_text(encoding='utf-8-sig') if path.exists() else ''
+    real = path.resolve()
+    if not real.is_file() and path.exists(): fail('unsafe_host_path')
+    if real.exists() and real.stat().st_size > 1048576: fail('invalid_host_config')
+    return real.read_text(encoding='utf-8-sig') if real.exists() else ''
 def config(home):
     value = yaml.safe_load(read(home / 'config.yaml')) or {}
     if not isinstance(value, dict): fail('invalid_host_config')

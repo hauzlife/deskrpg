@@ -35,6 +35,10 @@ import { findCronOrigin, resolveOriginForGateway } from "@/lib/cron-origins";
 import type { OwnerPluginClient } from "@/lib/hermes/plugin-client-types";
 import { listChannelBoards } from "@/lib/kanban-boards";
 import {
+  executePostCompletionLifecycle,
+  resolveTacticalRoomId,
+} from "@/lib/autonomous-lifecycle-hooks";
+import {
   PLUGIN_EVENT_KINDS,
   type ApprovalBlockedEventPayload,
   type CardProposalEventPayload,
@@ -538,6 +542,48 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
       },
       deps,
     );
+
+    // HK-01 & HK-02: Autonomous Lifecycle Hooks
+    if (kind === "card_done" && event.task_id) {
+      void executePostCompletionLifecycle({
+        channelId,
+        boardSlug: event.board ?? deps.boardSlug,
+        taskId: event.task_id,
+        cardTitle,
+        assignee: p.assignee ?? null,
+        emitRoomMessage: deps.emitRoomMessage,
+      }).catch((err) => {
+        console.warn(`[automation-events] executePostCompletionLifecycle failed:`, err);
+      });
+    }
+
+    if (kind === "card_blocked" && event.task_id) {
+      void resolveTacticalRoomId(channelId, p.assignee ?? null)
+        .then(async (tacticalRoom) => {
+          if (tacticalRoom) {
+            const blockerMsg = `🚨 **[BLOQUEIO NA ESTEIRA]** \`${event.task_id}\` — ${cardTitle}\n👤 Atribuído a: @${p.assignee ?? "system"}\n⚠️ Ação necessária: Intervenção técnica no card.`;
+            const msg = await deps.appendRoomMessage({
+              roomId: tacticalRoom.roomId,
+              senderKind: sender.senderKind,
+              senderId: sender.senderId,
+              senderName: sender.senderName,
+              content: blockerMsg,
+              notice: {
+                kind: "card_blocked",
+                cardId: event.task_id!,
+                cardTitle,
+                boardSlug: event.board ?? deps.boardSlug,
+                npcName: sender.npcName,
+              },
+            });
+            deps.emitRoomMessage(tacticalRoom.roomId, msg);
+          }
+        })
+        .catch((err) => {
+          console.warn(`[automation-events] Blocker dispatch to tactical room failed:`, err);
+        });
+    }
+
     return;
   }
 

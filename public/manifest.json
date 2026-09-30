@@ -1,7 +1,7 @@
 {
-  "name": "DeskRPG",
+  "name": "DeskRPG for Hermes",
   "short_name": "DeskRPG",
-  "description": "Build your virtual office with AI employees in a 2D pixel art RPG workspace",
+  "description": "A self-hosted 3D virtual office where you chat, meet, and run kanban work with Hermes AI agents",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#111827",

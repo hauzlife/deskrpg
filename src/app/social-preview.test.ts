@@ -15,12 +15,20 @@ test("the public landing is enabled only when the production flag is on", () => 
   assert.equal(isPublicLandingEnabled({}), false);
 });
 
-test("the login URL has a share image but is not in the search index", () => {
+test("the login URL has a share image and does not point canonical to the homepage", () => {
   const metadata = createAuthShareMetadata(true);
-  assert.equal(metadata.alternates?.canonical, "https://deskrpg.com/");
+  // Canonical should NOT point to root https://deskrpg.com/ when robots has noindex
+  assert.equal(metadata.alternates?.canonical, "https://deskrpg.com/auth");
   assert.deepEqual(metadata.robots, { index: false, follow: false });
   assert.equal(metadata.openGraph?.url, "https://deskrpg.com/");
   assert.equal((metadata.twitter as { card?: string })?.card, "summary_large_image");
+});
+
+test("robots policy protects private /account/ paths", () => {
+  const publicRules = createRobotsPolicy(true);
+  const rules = Array.isArray(publicRules.rules) ? publicRules.rules[0] : publicRules.rules;
+  const disallow = Array.isArray(rules.disallow) ? rules.disallow : [rules.disallow];
+  assert.ok(disallow.includes("/account/"));
 });
 
 test("robots and sitemap index only the one public site page", () => {
@@ -32,6 +40,7 @@ test("robots and sitemap index only the one public site page", () => {
       "/auth",
       "/api/",
       "/admin/",
+      "/account/",
       "/channels",
       "/characters",
       "/game",
@@ -41,9 +50,18 @@ test("robots and sitemap index only the one public site page", () => {
     ],
   });
   assert.equal(publicRules.sitemap, "https://deskrpg.com/sitemap.xml");
-  assert.deepEqual(createSitemapEntries(true), [
-    { url: "https://deskrpg.com/", changeFrequency: "monthly", priority: 1 },
-  ]);
+  const entries = createSitemapEntries(true);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].url, "https://deskrpg.com/");
+  assert.ok(entries[0].lastModified instanceof Date);
+  assert.equal(entries[0].changeFrequency, "weekly");
+  assert.equal(entries[0].priority, 1.0);
+  assert.deepEqual(entries[0].alternates?.languages, {
+    ko: "https://deskrpg.com/?lang=ko",
+    en: "https://deskrpg.com/?lang=en",
+    ja: "https://deskrpg.com/?lang=ja",
+    zh: "https://deskrpg.com/?lang=zh",
+  });
 
   assert.deepEqual(createRobotsPolicy(false).rules, { userAgent: "*", disallow: "/" });
   assert.deepEqual(createSitemapEntries(false), []);
