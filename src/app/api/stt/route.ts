@@ -21,9 +21,12 @@ export async function POST(req: NextRequest) {
 
     try {
       const mlxScript = "/Users/anonymous/bin/mlx_stt.py";
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.PYTHONPATH;
+      delete cleanEnv.PYTHONHOME;
       const { stdout } = await execFileAsync(mlxScript, [tempPath], {
         env: {
-          ...process.env,
+          ...cleanEnv,
           PATH: `/Users/anonymous/miniconda3/bin:${process.env.PATH}`,
         },
       });
