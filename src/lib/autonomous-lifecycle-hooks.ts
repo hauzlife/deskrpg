@@ -232,6 +232,12 @@ export function resolveDownstreamHandoff(assignee: string | null): DownstreamHan
   const role = assignee?.trim().toLowerCase() ?? '';
 
   switch (role) {
+    case 'site-reliability-engineer':
+      return {
+        nextActor: '@backend-engineer @debugger',
+        actionRequired: 'Varredura de telemetria/anomalias concluída. Executar remediação física de serviços, bots e links.',
+        targetRoomName: 'NOC',
+      };
     case 'security-engineer':
       return {
         nextActor: '@site-reliability-engineer @backend-engineer',
