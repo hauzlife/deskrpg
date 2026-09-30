@@ -1735,7 +1735,7 @@ test("board attachment list — old plugins that do not know the list are not ca
   });
 });
 
-test("mixed approval: new cards default to the human policy and a null policy cannot bypass it", async () => {
+test("new cards default to the company AI reviewer policy and a null policy cannot bypass it", async () => {
   server.reset();
   server.setInfo({ capabilities: ["kanban", "cron", "events", "kanban_review_policy_v1"] });
   const routes = await loadRoutes();
@@ -1748,8 +1748,8 @@ test("mixed approval: new cards default to the human policy and a null policy ca
     .at(-1)!;
   assert.deepEqual((sent.json as Record<string, unknown>).review_policy, {
     version: 1,
-    mode: "human",
-    reviewer_profile: null,
+    mode: "agent",
+    reviewer_profile: "reviewer",
   });
   const invalid = await createTask(routes, seed.ownerId, seed.channelId, { reviewPolicy: null });
   assert.equal(invalid.status, 400);
@@ -1824,14 +1824,18 @@ const lastCreatedPolicy = () =>
       .at(-1)!.json as Record<string, unknown>
   ).review_policy;
 
-test("review hooks: a new card defaults to the human policy like the patched core", async () => {
+test("review hooks: a new card defaults to the company AI reviewer policy", async () => {
   server.reset();
   server.setInfo({ capabilities: ["kanban", "cron", "events", "review_hooks_v1"] });
   const routes = await loadRoutes();
   const seed = await seedKanbanChannel();
   const created = await createTask(routes, seed.ownerId, seed.channelId);
   assert.equal(created.status, 201);
-  assert.deepEqual(lastCreatedPolicy(), { version: 1, mode: "human", reviewer_profile: null });
+  assert.deepEqual(lastCreatedPolicy(), {
+    version: 1,
+    mode: "agent",
+    reviewer_profile: "reviewer",
+  });
 });
 
 test("review hooks: mixed review carries its AI reviewer, and needs one that is not the assignee", async () => {

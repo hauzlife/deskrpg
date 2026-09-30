@@ -19,6 +19,12 @@ import { NextResponse } from "next/server";
 
 import { db, gatewayResources } from "@/db";
 import { schedulePollNow } from "@/lib/automation-poll-trigger";
+import {
+  DEFAULT_REVIEW_POLICY,
+  DEFAULT_SWARM_SYNTHESIZER_PROFILE,
+  DEFAULT_SWARM_VERIFIER_PROFILE,
+  DEFAULT_SWARM_WORKERS,
+} from "@/lib/kanban-defaults";
 import { dispatchOnce } from "@/lib/kanban-dispatch";
 import { resolveProposal } from "@/lib/card-proposals";
 import { liveResolveDeps, proposalFailureResponse } from "@/lib/card-proposals-live";
@@ -64,6 +70,7 @@ import {
   attachmentsUnsupportedResponse,
   commentAuthorFor,
   loadChannelRoster,
+  resolveActiveProfile,
   resolveAssignee,
   resolveKanbanChannelContext,
   supportsAttachments,
@@ -226,7 +233,7 @@ async function resolveReviewPolicy(
   assignee?: string | null,
 ): Promise<{ ok: true; policy: KanbanReviewPolicy } | { ok: false; response: NextResponse }> {
   const raw = body.reviewPolicy;
-  if (raw === undefined) return { ok: true, policy: HUMAN_REVIEW_POLICY };
+  if (raw === undefined) return { ok: true, policy: DEFAULT_REVIEW_POLICY };
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     return { ok: false, response: invalidBody("reviewPolicy must be an object") };
   const policy = raw as JsonBody;
@@ -772,15 +779,15 @@ function parseSwarmWorkers(raw: unknown): SwarmWorkerInput[] | null {
 }
 
 /**
- * The workers' approval policy. Absent means the board default (human), like a new card. AI approval needs a
- * reviewer who is none of the workers — Hermes refuses reviewer == implementer.
+ * The workers' approval policy. Absent uses the company AI-review default. An explicit AI reviewer
+ * must be none of the workers — Hermes refuses reviewer == implementer.
  */
 async function resolveSwarmWorkerPolicy(
   ctx: KanbanChannelContext,
   raw: unknown,
   workerProfiles: string[],
 ): Promise<{ ok: true; policy: KanbanReviewPolicy } | { ok: false; response: NextResponse }> {
-  if (raw === undefined) return { ok: true, policy: HUMAN_REVIEW_POLICY };
+  if (raw === undefined) return { ok: true, policy: DEFAULT_REVIEW_POLICY };
   const workersBody = { reviewPolicy: raw } as JsonBody;
   // Resolve against the first worker, then check the reviewer against every worker.
   const review = await resolveReviewPolicy(ctx, workersBody, workerProfiles[0]);
@@ -831,26 +838,45 @@ export async function createSwarm(req: NextRequest, channelId: string) {
   }
   const goal = typeof body.goal === "string" ? body.goal.trim() : "";
   if (!goal) return invalidBody("goal is required");
-  const workers = parseSwarmWorkers(body.workers);
-  if (!workers) return invalidBody("workers must be a non-empty array of {npcId, title}");
-  if (typeof body.verifierNpcId !== "string" || !body.verifierNpcId) {
-    return invalidBody("verifierNpcId must be an npcId");
-  }
-  if (typeof body.synthesizerNpcId !== "string" || !body.synthesizerNpcId) {
-    return invalidBody("synthesizerNpcId must be an npcId");
+  const workers = body.workers === undefined ? null : parseSwarmWorkers(body.workers);
+  if (body.workers !== undefined && !workers) {
+    return invalidBody("workers must be a non-empty array of {npcId, title}");
   }
 
   // Resolve everything before sending. If one fails nothing is created — a partial graph is what the
-  // dispatcher would then see.
+  // dispatcher would then see. Omitted roles are resolved by profile so the same company defaults
+  // work in every channel even though NPC ids are channel-specific.
   const workerProfiles: string[] = [];
-  for (const worker of workers) {
-    const r = await resolveAssignee(ctx, worker.npcId);
-    if (!r.ok) return r.response;
-    workerProfiles.push(r.profileName);
+  const resolvedWorkers: Array<{ profile: string; title: string; body?: string; skills?: string[] }> = [];
+  if (workers) {
+    for (const worker of workers) {
+      const r = await resolveAssignee(ctx, worker.npcId);
+      if (!r.ok) return r.response;
+      workerProfiles.push(r.profileName);
+      resolvedWorkers.push({
+        profile: r.profileName,
+        title: worker.title,
+        ...(worker.body ? { body: worker.body } : {}),
+        ...(worker.skills ? { skills: worker.skills } : {}),
+      });
+    }
+  } else {
+    for (const worker of DEFAULT_SWARM_WORKERS) {
+      const r = await resolveActiveProfile(ctx, worker.profileName);
+      if (!r.ok) return r.response;
+      workerProfiles.push(r.profileName);
+      resolvedWorkers.push({ profile: r.profileName, title: worker.title });
+    }
   }
-  const verifier = await resolveAssignee(ctx, body.verifierNpcId);
+  const verifier =
+    typeof body.verifierNpcId === "string" && body.verifierNpcId
+      ? await resolveAssignee(ctx, body.verifierNpcId)
+      : await resolveActiveProfile(ctx, DEFAULT_SWARM_VERIFIER_PROFILE);
   if (!verifier.ok) return verifier.response;
-  const synthesizer = await resolveAssignee(ctx, body.synthesizerNpcId);
+  const synthesizer =
+    typeof body.synthesizerNpcId === "string" && body.synthesizerNpcId
+      ? await resolveAssignee(ctx, body.synthesizerNpcId)
+      : await resolveActiveProfile(ctx, DEFAULT_SWARM_SYNTHESIZER_PROFILE);
   if (!synthesizer.ok) return synthesizer.response;
   let workerPolicy: KanbanReviewPolicy | undefined;
   if (policyAware) {
@@ -861,12 +887,7 @@ export async function createSwarm(req: NextRequest, channelId: string) {
 
   const res = await ctx.client.kanban.createSwarm(ctx.boardSlug, {
     goal,
-    workers: workers.map((worker, index) => ({
-      profile: workerProfiles[index],
-      title: worker.title,
-      ...(worker.body ? { body: worker.body } : {}),
-      ...(worker.skills ? { skills: worker.skills } : {}),
-    })),
+    workers: resolvedWorkers,
     verifier: verifier.profileName,
     synthesizer: synthesizer.profileName,
     ...(workerPolicy ? { review_policy: workerPolicy } : {}),

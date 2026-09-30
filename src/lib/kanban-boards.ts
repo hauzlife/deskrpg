@@ -28,6 +28,7 @@
  */
 
 import { withChannelAutomationLock } from "./channel-automation-lock";
+import { DEFAULT_REVIEW_POLICY } from "./kanban-defaults";
 import {
   EventCarrierError,
   recoverEventCarrierHandoff,
@@ -328,10 +329,8 @@ const defaultPolicyChecked: Set<string> = ((
 ).__deskrpgBoardDefaultChecked ??= new Set());
 
 /**
- * New cards need a person's approval. On upstream Hermes that product default lives in the board's
- * default policy, which also covers cards made outside DeskRPG. A board without one gets human
- * approval; one already set (by a person or an earlier run) is left alone. Best effort: the board
- * works without it, and a failed attempt is retried on a later ensure.
+ * Every board without an explicit override receives the company AI-review default. This covers cards
+ * created outside DeskRPG too; an existing board-level choice remains untouched.
  */
 async function ensureBoardDefaultPolicy(
   client: OwnerPluginClient,
@@ -349,12 +348,12 @@ async function ensureBoardDefaultPolicy(
   }
   if (current.data.default === null) {
     const set = await client.kanban.setBoardDefaultPolicy(boardSlug, {
-      mode: "human",
-      reviewer_profile: null,
+      mode: DEFAULT_REVIEW_POLICY.mode,
+      reviewer_profile: DEFAULT_REVIEW_POLICY.reviewer_profile,
     });
     if (!set.ok) {
       console.warn(
-        `[kanban-boards] could not default board ${boardSlug} to human approval: ${set.failure.code}`,
+        `[kanban-boards] could not default board ${boardSlug} to AI reviewer approval: ${set.failure.code}`,
       );
       return;
     }

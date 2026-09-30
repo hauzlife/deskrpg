@@ -377,7 +377,7 @@ function channelBoardSlugOf(channelId: string) {
   return `deskrpg-${channelId.replace(/-/g, "").toLowerCase()}`;
 }
 
-test("on a review-hooks gateway a board without a default gets human approval, once per process", async () => {
+test("on a review-hooks gateway a board without a default gets AI reviewer approval, once per process", async () => {
   const plugin = await startPlugin({
     capabilities: ["kanban", "cron", "events", "review_hooks_v1"],
   });
@@ -396,7 +396,7 @@ test("on a review-hooks gateway a board without a default gets human approval, o
     calls.map((r) => [r.method, r.json ?? null]),
     [
       ["GET", null],
-      ["PUT", { mode: "human", reviewer_profile: null }],
+      ["PUT", { mode: "agent", reviewer_profile: "reviewer" }],
     ],
     "read, then set when unset — and not again on later ensures",
   );

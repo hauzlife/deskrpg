@@ -34,6 +34,7 @@ import {
 } from "@/lib/cron-access";
 import type { OwnerPluginClient } from "@/lib/hermes/plugin-client-types";
 import type { KanbanReviewPolicy } from "@/lib/hermes/deskrpg-plugin-types";
+import { DEFAULT_REVIEW_POLICY } from "@/lib/kanban-defaults";
 import { supportsReviewPolicy } from "@/lib/hermes/plugin-capability";
 import {
   ensureChannelBoard,
@@ -288,6 +289,36 @@ export async function resolveAssignee(
   return { ok: true, profileName: row.profileName, npcId: row.npcId };
 }
 
+export async function resolveActiveProfile(
+  ctx: Pick<KanbanChannelContext, "channelId" | "gateway">,
+  profileName: string,
+): Promise<AssigneeResult> {
+  const [row] = await db
+    .select({ npcId: npcs.id, profileName: hermesProfiles.profileName })
+    .from(npcs)
+    .innerJoin(hermesProfiles, eq(hermesProfiles.id, npcs.hermesProfileId))
+    .where(
+      and(
+        eq(hermesProfiles.profileName, profileName),
+        eq(npcs.channelId, ctx.channelId),
+        eq(npcs.active, true),
+        eq(hermesProfiles.gatewayId, ctx.gateway.id),
+      ),
+    )
+    .limit(1);
+  if (!row) {
+    return {
+      ok: false,
+      response: cronError(
+        400,
+        "assignee_not_in_channel",
+        "Assignee must be an NPC currently working in this channel",
+      ),
+    };
+  }
+  return { ok: true, profileName: row.profileName, npcId: row.npcId };
+}
+
 // ---------------------------------------------------------------------------
 // Comment author (R11)
 // ---------------------------------------------------------------------------
@@ -315,14 +346,11 @@ export function supportsAttachments(ctx: Pick<KanbanChannelContext, "info">): bo
 }
 
 /**
- * The completion policy new work gets when nobody chose one: human approval — but only on a gateway
- * that enforces policies. Upstream Hermes has no such contract, so there the card is created without
- * one (Hermes' own behaviour) and the board says it completes without approval.
+ * The completion policy new work gets when no caller chose one. Policy-aware gateways use the
+ * company AI reviewer; upstream Hermes has no policy contract and receives none.
  */
 export function defaultReviewPolicy(
   ctx: Pick<KanbanChannelContext, "info">,
 ): KanbanReviewPolicy | undefined {
-  return supportsReviewPolicy(ctx.info)
-    ? { version: 1, mode: "human", reviewer_profile: null }
-    : undefined;
+  return supportsReviewPolicy(ctx.info) ? DEFAULT_REVIEW_POLICY : undefined;
 }

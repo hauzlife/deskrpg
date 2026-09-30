@@ -92,8 +92,8 @@ test("cards land in blocked and are all bundled into one approval", async () => 
   for (const request of created.slice(-3))
     assert.deepEqual((request.json as Record<string, unknown>).review_policy, {
       version: 1,
-      mode: "human",
-      reviewer_profile: null,
+      mode: "agent",
+      reviewer_profile: "reviewer",
     });
   const pending = await pendingApprovalTaskIds(channelId);
   assert.equal(pending.size, 3);
@@ -425,7 +425,7 @@ test("upstream Hermes (no approval-policy contract): the batch's cards are creat
   );
 });
 
-test("review hooks: the batch's cards carry the human policy like on the patched core", async () => {
+test("review hooks: the batch's cards carry the company AI reviewer policy", async () => {
   const { ctx } = await seedCtx();
   const { createApprovalBatch } = await import("@/lib/approvals");
   ctx.info = { ...ctx.info!, capabilities: ["kanban", "cron", "events", "review_hooks_v1"] };
@@ -444,7 +444,7 @@ test("review hooks: the batch's cards carry the human policy like on the patched
     .filter((r) => r.method === "POST" && r.path.startsWith("/deskrpg/kanban/tasks?"));
   assert.deepEqual((sent.json as Record<string, unknown>).review_policy, {
     version: 1,
-    mode: "human",
-    reviewer_profile: null,
+    mode: "agent",
+    reviewer_profile: "reviewer",
   });
 });

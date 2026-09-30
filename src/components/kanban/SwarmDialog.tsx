@@ -2,6 +2,12 @@
 import { useMemo, useState } from "react";
 
 import { useT } from "@/lib/i18n";
+import {
+  DEFAULT_REVIEWER_PROFILE,
+  DEFAULT_SWARM_SYNTHESIZER_PROFILE,
+  DEFAULT_SWARM_VERIFIER_PROFILE,
+  DEFAULT_SWARM_WORKERS,
+} from "@/lib/kanban-defaults";
 
 import type { BoardNpc } from "./kanban-view-model";
 
@@ -13,7 +19,7 @@ export type SwarmSubmit = {
   verifierNpcId: string;
   synthesizerNpcId: string;
   idempotencyKey: string;
-  /** Omitted for human approval — the server's default. */
+  /** Omitted only when the gateway cannot enforce approval policies. */
   reviewPolicy?: { mode: "agent" | "mixed"; reviewerNpcId: string };
 };
 
@@ -22,11 +28,15 @@ export type SwarmReviewMode = "human" | "agent" | "mixed";
 const FIELD = "w-full rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-text";
 const LABEL = "block text-[11px] font-semibold text-text-secondary mb-1";
 
-const newRow = (npcId: string): WorkerRow => ({
+const newRow = (npcId: string, title = ""): WorkerRow => ({
   key: crypto.randomUUID(),
   npcId,
-  title: "",
+  title,
 });
+
+function npcIdForProfile(npcs: readonly BoardNpc[], profileName: string, fallback: string): string {
+  return npcs.find((npc) => npc.profileName === profileName)?.npcId ?? fallback;
+}
 
 interface SwarmDialogProps {
   /** Only NPCs who are active (checked in) — the caller filters via `activeAssigneeOptions(npcs)`. */
@@ -56,12 +66,24 @@ export default function SwarmDialog({
   const t = useT();
   const first = npcs[0]?.npcId ?? "";
   const [goal, setGoal] = useState("");
-  const [rows, setRows] = useState<WorkerRow[]>(() => [newRow(first)]);
-  const [verifier, setVerifier] = useState(npcs[1]?.npcId ?? first);
-  const [synthesizer, setSynthesizer] = useState(npcs[2]?.npcId ?? first);
+  const [rows, setRows] = useState<WorkerRow[]>(() =>
+    DEFAULT_SWARM_WORKERS.map((worker) =>
+      newRow(npcIdForProfile(npcs, worker.profileName, first), worker.title),
+    ),
+  );
+  const [verifier, setVerifier] = useState(() =>
+    npcIdForProfile(npcs, DEFAULT_SWARM_VERIFIER_PROFILE, first),
+  );
+  const [synthesizer, setSynthesizer] = useState(() =>
+    npcIdForProfile(npcs, DEFAULT_SWARM_SYNTHESIZER_PROFILE, first),
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [reviewMode, setReviewMode] = useState<SwarmReviewMode>("human");
-  const [reviewer, setReviewer] = useState("");
+  const [reviewMode, setReviewMode] = useState<SwarmReviewMode>(() =>
+    policyModes.includes("agent") ? "agent" : "human",
+  );
+  const [reviewer, setReviewer] = useState(() =>
+    npcIdForProfile(npcs, DEFAULT_REVIEWER_PROFILE, ""),
+  );
   // The reviewer judges the workers' results, so it can't be one of them (the server refuses it too).
   const reviewerOptions = npcs.filter((npc) => !rows.some((r) => r.npcId === npc.npcId));
 

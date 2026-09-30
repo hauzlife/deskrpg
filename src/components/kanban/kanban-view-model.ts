@@ -250,7 +250,6 @@ export type TaskFormValues = {
 export type ChatTaskDraft = Pick<TaskFormValues, "title" | "body" | "assigneeNpcId">;
 
 export const EMPTY_TASK_FORM: TaskFormValues = {
-  reviewMode: "human",
   reviewerNpcId: "",
   title: "",
   body: "",

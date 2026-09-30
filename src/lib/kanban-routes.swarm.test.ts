@@ -191,7 +191,11 @@ test("a policy-aware swarm sends the workers' board-default policy and NPC profi
   const res = await createSwarm(postRequest(ctx, swarmBody(ctx)), ctx.channelId);
   assert.equal(res.status, 200, await res.clone().text());
   const sent = ctx.fakePlugin.lastSwarmBody()!;
-  assert.deepEqual(sent.review_policy, { version: 1, mode: "human", reviewer_profile: null });
+  assert.deepEqual(sent.review_policy, {
+    version: 1,
+    mode: "agent",
+    reviewer_profile: "reviewer",
+  });
   assert.deepEqual(
     (sent.workers as Array<{ profile: string }>).map((w) => w.profile),
     ["nova", "luna"],
@@ -319,3 +323,26 @@ test("review hooks: a new swarm carries the policy on its result cards", async (
     reviewer_profile: "sophie",
   });
 });
+
+test("a swarm API request fills omitted company roles from active channel profiles", async () => {
+  const { createSwarm } = await import("@/lib/kanban-routes");
+  const ctx = await seedChannelWithNpcs(
+    ["reviewer", "frontend-engineer", "orchestrator", "ml-engineer", "backend-engineer"],
+    { capabilities: POLICY_CAPS },
+  );
+  const res = await createSwarm(postRequest(ctx, { goal: "Ship the feature" }), ctx.channelId);
+  assert.equal(res.status, 200, await res.clone().text());
+  const sent = ctx.fakePlugin.lastSwarmBody()!;
+  assert.deepEqual(sent.workers, [
+    { profile: "backend-engineer", title: "Backend implementation" },
+    { profile: "frontend-engineer", title: "Frontend implementation" },
+  ]);
+  assert.equal(sent.verifier, "ml-engineer");
+  assert.equal(sent.synthesizer, "orchestrator");
+  assert.deepEqual(sent.review_policy, {
+    version: 1,
+    mode: "agent",
+    reviewer_profile: "reviewer",
+  });
+});
+
