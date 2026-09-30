@@ -2,12 +2,13 @@
  * Autonomous Lifecycle Hooks (HIVE — DeskRPG + Hermes)
  *
  * Implements the lifecycle hooks from AUTONOMOUS_LIFECYCLE_HOOKS.md:
- * - HK-01: PostCompletionActionHook (Auto-Triage & Remediation Dispatcher)
+ * - HK-01: PostCompletionActionHook (Auto-Triage & Remediation Dispatcher + Artifact Pyramid Ingestion)
  * - HK-02: IncidentRoomDispatchHook (Contextual Tactical Room Notifications)
  * - HK-03: ArtifactPreservationHook (Preserves L1/L2/L3 Artifact Pyramids)
  * - HK-04: ReviewGateTransitionHook (Reviewer -> Verifier chain handoff)
  * - HK-05: OrchestratorFeedbackLoopHook (Epic closing & backlog feeding)
  * - HK-06: CircuitBreakerDeadlockHook (Quarantine on failure loops)
+ * - HK-07: Bidirectional Starvation Hook (Instant backlog feeding on 0 active tasks)
  */
 
 import { db, chatRooms } from '@/db';
@@ -17,24 +18,29 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 
-// Dynamic SQLite loader compatible with Node 22/24 built-in node:sqlite or better-sqlite3
-function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean }) {
+export const PRODUCT_BOARDS = ['mystelia', 'hot-telegram', 'bloopu', 'social'] as const;
+export const STARVATION_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes debounce
+export const lastStarvationTrigger = new Map<string, number>();
+
+// Dynamic SQLite loader compatible with Node 22/24/26 built-in node:sqlite or better-sqlite3
+export function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean }) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const nodeSqlite = require('node:sqlite');
     if (nodeSqlite && nodeSqlite.DatabaseSync) {
-      const db = new nodeSqlite.DatabaseSync(dbPath, { readOnly: options?.readonly ?? false });
+      const dbInstance = new nodeSqlite.DatabaseSync(dbPath, { readOnly: options?.readonly ?? false });
       return {
         prepare: (query: string) => {
-          const stmt = db.prepare(query);
+          const stmt = dbInstance.prepare(query);
           return {
             get: (...args: any[]) => stmt.get(...args),
             all: (...args: any[]) => stmt.all(...args),
             run: (...args: any[]) => stmt.run(...args),
           };
         },
-        exec: (query: string) => db.exec(query),
+        exec: (query: string) => dbInstance.exec(query),
       };
     }
   } catch {
@@ -58,6 +64,14 @@ export interface DownstreamHandoff {
   targetRoomName: string;
 }
 
+export interface ParsedSlice {
+  targetBoard: string;
+  title: string;
+  body: string;
+  assignee: string;
+  priority: number;
+}
+
 /**
  * Reads the latest run summary and metadata from Hermes Kanban DB directly
  */
@@ -71,10 +85,8 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
       .prepare('SELECT summary, metadata FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1')
       .get(taskId) as { summary?: string | null; metadata?: string | null } | undefined;
 
-    if (!row) return null;
-
     let parsedMeta: Record<string, unknown> | null = null;
-    if (row.metadata) {
+    if (row?.metadata) {
       try {
         parsedMeta = JSON.parse(row.metadata);
       } catch {
@@ -92,8 +104,25 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
       }
     }
 
+    // Also inspect tasks table for result / body if runInfo has no artifacts
+    if (artifacts.length === 0) {
+      try {
+        const taskRow = sqlite
+          .prepare('SELECT body, result FROM tasks WHERE id = ?')
+          .get(taskId) as { body?: string | null; result?: string | null } | undefined;
+        
+        const combined = `${taskRow?.result ?? ''}\n${taskRow?.body ?? ''}`;
+        const match = combined.match(/(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/);
+        if (match && !artifacts.includes(match[1])) {
+          artifacts.push(match[1]);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     return {
-      summary: row.summary ?? null,
+      summary: row?.summary ?? null,
       metadata: parsedMeta,
       artifacts,
     };
@@ -103,21 +132,12 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
   }
 }
 
-/**
- * Resolves the primary tactical room for a channel and role
- */
-export async function resolveTacticalRoomId(
-  channelId: string,
+function matchTacticalRoom(
+  rooms: Array<{ id: string; name: string }>,
   assignee: string | null
-): Promise<{ roomId: string; roomName: string } | null> {
-  const rooms = await db
-    .select({ id: chatRooms.id, name: chatRooms.name, kind: chatRooms.kind })
-    .from(chatRooms)
-    .where(and(eq(chatRooms.channelId, channelId), eq(chatRooms.kind, 'group')));
-
+): { roomId: string; roomName: string } | null {
   if (rooms.length === 0) return null;
 
-  // Departmental routing preference
   const preferences: Record<string, string[]> = {
     'security-engineer': ['Incident Response', 'NOC', 'Dev Lab'],
     'site-reliability-engineer': ['Incident Response', 'War Room', 'NOC'],
@@ -164,8 +184,45 @@ export async function resolveTacticalRoomId(
     if (match) return { roomId: match.id, roomName: match.name };
   }
 
-  // Fallback to first group room
   return { roomId: rooms[0].id, roomName: rooms[0].name };
+}
+
+/**
+ * Resolves the primary tactical room for a channel and role with fail-safe fallback
+ */
+export async function resolveTacticalRoomId(
+  channelId: string,
+  assignee: string | null
+): Promise<{ roomId: string; roomName: string } | null> {
+  // 1. Try Drizzle / @/db
+  try {
+    const rooms = await db
+      .select({ id: chatRooms.id, name: chatRooms.name, kind: chatRooms.kind })
+      .from(chatRooms)
+      .where(and(eq(chatRooms.channelId, channelId), eq(chatRooms.kind, 'group')));
+
+    if (rooms.length > 0) {
+      return matchTacticalRoom(rooms, assignee);
+    }
+  } catch {
+    // Fallback to node:sqlite on ~/.deskrpg/data/deskrpg.db
+    try {
+      const deskDbPath = path.join(os.homedir(), '.deskrpg', 'data', 'deskrpg.db');
+      if (fs.existsSync(deskDbPath)) {
+        const sqlite = getSqliteDatabase(deskDbPath, { readonly: true });
+        const rows = sqlite
+          .prepare("SELECT id, name, kind FROM chat_rooms WHERE channel_id = ? AND kind = 'group'")
+          .all(channelId) as Array<{ id: string; name: string; kind: string }>;
+        if (rows.length > 0) {
+          return matchTacticalRoom(rows, assignee);
+        }
+      }
+    } catch (e) {
+      console.warn('[autonomous-hooks] resolveTacticalRoomId fallback failed:', e);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -248,6 +305,92 @@ export function resolveDownstreamHandoff(assignee: string | null): DownstreamHan
 }
 
 /**
+ * Parses markdown analysis files in an artifact pyramid (02-analysis/*.md) to extract atomic cards
+ */
+export function parseArtifactPyramidSlices(pyramidPathOrIndex: string): ParsedSlice[] {
+  const slices: ParsedSlice[] = [];
+  try {
+    let rootDir = pyramidPathOrIndex;
+    if (fs.existsSync(pyramidPathOrIndex)) {
+      const stat = fs.statSync(pyramidPathOrIndex);
+      if (stat.isFile()) {
+        rootDir = path.dirname(pyramidPathOrIndex);
+      }
+    } else {
+      return slices;
+    }
+
+    const analysisDir = path.join(rootDir, '02-analysis');
+    if (!fs.existsSync(analysisDir) || !fs.statSync(analysisDir).isDirectory()) {
+      return slices;
+    }
+
+    const files = fs.readdirSync(analysisDir).filter((f) => f.endsWith('.md'));
+    for (const file of files) {
+      const fullPath = path.join(analysisDir, file);
+      const content = fs.readFileSync(fullPath, 'utf8');
+
+      // Resolve destination board from filename or content
+      let targetBoard = '';
+      const lowerFile = file.toLowerCase();
+      const lowerHead = content.slice(0, 600).toLowerCase();
+
+      if (lowerFile.includes('mystelia') || lowerHead.includes('mystelia')) {
+        targetBoard = 'mystelia';
+      } else if (
+        lowerFile.includes('hot-telegram') ||
+        lowerFile.includes('hot') ||
+        lowerHead.includes('hot-telegram')
+      ) {
+        targetBoard = 'hot-telegram';
+      } else if (
+        lowerFile.includes('bloopu') ||
+        lowerFile.includes('crypto') ||
+        lowerHead.includes('bloopu')
+      ) {
+        targetBoard = 'bloopu';
+      } else if (lowerFile.includes('social') || lowerHead.includes('social')) {
+        targetBoard = 'social';
+      }
+
+      // Split into sections by H3 headers
+      const sections = content.split(/\n###\s+/);
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.trim().split('\n');
+        const header = lines[0].trim();
+        const body = lines.slice(1).join('\n').trim();
+
+        const title = header.replace(/[`*]/g, '').trim();
+
+        const assigneeMatch = body.match(/-\s*\*\*Atribuído a:\*\*\s*`?([a-zA-Z0-9_-]+)`?/i);
+        const assignee = assigneeMatch ? assigneeMatch[1] : 'backend-engineer';
+
+        const priorityMatch = body.match(/-\s*\*\*Prioridade:\*\*\s*(P[0-9])/i);
+        let priority = 5;
+        if (priorityMatch) {
+          const p = priorityMatch[1].toUpperCase();
+          if (p === 'P0') priority = 10;
+          else if (p === 'P1') priority = 8;
+          else if (p === 'P2') priority = 5;
+        }
+
+        slices.push({
+          targetBoard,
+          title,
+          body,
+          assignee,
+          priority,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[autonomous-hooks] Error parsing artifact pyramid slices:', err);
+  }
+  return slices;
+}
+
+/**
  * HK-01 & HK-02: Executed when a card reaches 'done' or when a run finishes.
  * Posts rich notification with artifact in tactical room and creates child remediation tasks if needed.
  */
@@ -301,10 +444,8 @@ ${summaryText}${artifactLink}
     }
   }
 
-  // 2. HK-01 & Channel Board Dispatcher: Auto-Remediation / Slices / Child Tasks
-  if (runInfo?.metadata) {
-    await dispatchAutomatedRemediation(boardSlug, taskId, cardTitle, runInfo.metadata, channelId);
-  }
+  // 2. HK-01 & Channel Board Dispatcher: Auto-Remediation / Slices / Child Tasks / Artifact Pyramid Ingestion
+  await dispatchAutomatedRemediation(boardSlug, taskId, cardTitle, runInfo?.metadata ?? {}, channelId, runInfo);
 }
 
 /**
@@ -401,14 +542,110 @@ export function checkBoardWipLimit(boardSlug: string, wipLimit = 5): WipCheckRes
 }
 
 /**
- * Creates concrete downstream tasks in the appropriate board if critical findings exist or technical slices are generated
+ * Checks if a product board has run out of tasks (0 in ready, running, todo)
+ */
+export function checkBoardStarvation(boardSlug: string): { starved: boolean; activeCount: number } {
+  try {
+    const dbPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+    if (!fs.existsSync(dbPath)) return { starved: false, activeCount: 0 };
+
+    const sqlite = getSqliteDatabase(dbPath, { readonly: true });
+    const row = sqlite
+      .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'todo')")
+      .get() as { count?: number } | undefined;
+
+    const activeCount = Number(row?.count ?? 0);
+    return { starved: activeCount === 0, activeCount };
+  } catch (err) {
+    console.warn(`[autonomous-hooks] checkBoardStarvation failed for ${boardSlug}:`, err);
+    return { starved: false, activeCount: 0 };
+  }
+}
+
+/**
+ * HK-07: Bidirectional Starvation Sentinel
+ * When 0 active tasks exist on a product board, instantly triggers the roadmap progression / task slicing pipeline.
+ */
+export async function checkAndTriggerStarvation(args: {
+  channelId: string;
+  boardSlug: string;
+  emitRoomMessage?: (roomId: string, message: any) => void;
+}): Promise<boolean> {
+  const { channelId, boardSlug, emitRoomMessage } = args;
+
+  if (!PRODUCT_BOARDS.includes(boardSlug as any)) return false;
+
+  const { starved, activeCount } = checkBoardStarvation(boardSlug);
+  if (!starved) return false;
+
+  const now = Date.now();
+  const lastTime = lastStarvationTrigger.get(boardSlug) ?? 0;
+  if (now - lastTime < STARVATION_COOLDOWN_MS) {
+    return false;
+  }
+  lastStarvationTrigger.set(boardSlug, now);
+
+  console.warn(`[autonomous-hooks] 🚨 BACKLOG STARVATION DETECTED on board "${boardSlug}" (active=${activeCount})`);
+
+  // 1. Alert in Product Office / Ops Control
+  const tacticalRoom = await resolveTacticalRoomId(channelId, 'product-manager');
+  if (tacticalRoom) {
+    const alertContent = `🚨 **[FOME DE BACKLOG DETECTADA]**
+Board: \`${boardSlug}\`
+Status: **0 tarefas ativas** (ready / running / todo esgotados).
+⚡ **Ação Autônoma:** Acionando @product-manager e @implementation-planner para fatiar o próximo marco do Roadmap imediatamente.`;
+
+    try {
+      const message = await appendRoomMessage({
+        roomId: tacticalRoom.roomId,
+        senderKind: 'system',
+        senderId: null,
+        senderName: 'Starvation Sentinel',
+        content: alertContent,
+        notice: {
+          kind: 'card_blocked',
+          cardId: `starvation-${boardSlug}`,
+          cardTitle: `Backlog Starvation on ${boardSlug}`,
+          boardSlug,
+          npcName: 'product-manager',
+        },
+      });
+      if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, message);
+    } catch (err) {
+      console.warn('[autonomous-hooks] Failed to post starvation room notice:', err);
+    }
+  }
+
+  // 2. Wake up implementation-planner and product-manager via Hermes CLI
+  try {
+    spawn('hermes', ['--profile', 'implementation-planner', 'cron', 'run', 'cefc5ff877ce'], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+
+    spawn('hermes', ['--profile', 'product-manager', 'cron', 'run', '06c46a5c4668'], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+
+    return true;
+  } catch (err) {
+    console.warn('[autonomous-hooks] Failed to spawn hermes cron jobs on starvation:', err);
+    return false;
+  }
+}
+
+/**
+ * Creates concrete downstream tasks in the appropriate board if critical findings exist,
+ * technical slices are generated, or an artifact pyramid was output.
  */
 async function dispatchAutomatedRemediation(
   boardSlug: string,
   parentTaskId: string,
   parentTitle: string,
   meta: Record<string, unknown>,
-  channelId?: string
+  channelId?: string,
+  runInfo?: TaskRunInfo | null
 ): Promise<void> {
   const cveCount = Number(meta.cve_critical_count ?? 0);
   const cveFindings = Array.isArray(meta.cve_findings) ? meta.cve_findings : [];
@@ -443,7 +680,7 @@ async function dispatchAutomatedRemediation(
     });
   }
 
-  // C. Generic Slices Dispatcher: if technical slices were output by orchestrator/planner
+  // C. Generic In-Memory Slices Dispatcher: if technical_slices array was in metadata
   const technicalSlices = Array.isArray(meta.technical_slices)
     ? (meta.technical_slices as Array<Record<string, unknown>>)
     : [];
@@ -476,6 +713,63 @@ async function dispatchAutomatedRemediation(
         priority,
         parentId: parentTaskId,
       });
+    }
+  }
+
+  // D. HK-01 Artifact Pyramid Ingestion: parses L2 analysis markdown files and commits cards to DeskRPG
+  const candidatePyramids: string[] = [];
+  if (typeof meta.artifact_pyramid === 'string') {
+    candidatePyramids.push(meta.artifact_pyramid);
+  }
+  if (Array.isArray(runInfo?.artifacts)) {
+    for (const a of runInfo.artifacts) {
+      if (typeof a === 'string' && !candidatePyramids.includes(a)) {
+        candidatePyramids.push(a);
+      }
+    }
+  }
+  if (runInfo?.summary) {
+    const match = runInfo.summary.match(/(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/);
+    if (match && !candidatePyramids.includes(match[1])) {
+      candidatePyramids.push(match[1]);
+    }
+  }
+
+  const affectedBoards = new Set<string>();
+  let totalCardsCommitted = 0;
+
+  for (const candidate of candidatePyramids) {
+    const slices = parseArtifactPyramidSlices(candidate);
+    for (const slice of slices) {
+      const destBoard = slice.targetBoard || boardSlug;
+      const res = insertTaskSafely(destBoard, {
+        title: slice.title,
+        body: slice.body,
+        assignee: slice.assignee,
+        priority: slice.priority,
+        parentId: parentTaskId,
+      });
+      if (res.success && res.taskId) {
+        affectedBoards.add(destBoard);
+        totalCardsCommitted++;
+      }
+    }
+  }
+
+  // Kickstart workers on affected boards immediately
+  if (affectedBoards.size > 0) {
+    console.log(
+      `[autonomous-hooks] Committed ${totalCardsCommitted} cards across boards [${Array.from(affectedBoards).join(', ')}]. Spawning dispatchers...`
+    );
+    for (const destBoard of affectedBoards) {
+      try {
+        spawn('hermes', ['kanban', '--board', destBoard, 'dispatch'], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+      } catch (err) {
+        console.warn(`[autonomous-hooks] Failed to spawn hermes dispatch for ${destBoard}:`, err);
+      }
     }
   }
 }

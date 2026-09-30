@@ -38,6 +38,7 @@ import {
   executePostCompletionLifecycle,
   executeReviewGateHandoff,
   resolveTacticalRoomId,
+  checkAndTriggerStarvation,
 } from "@/lib/autonomous-lifecycle-hooks";
 import {
   PLUGIN_EVENT_KINDS,
@@ -544,18 +545,27 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
       deps,
     );
 
-    // HK-01 & HK-02: Autonomous Lifecycle Hooks
+    // HK-01, HK-02 & HK-07: Autonomous Lifecycle Hooks & Starvation Sentinel
     if (kind === "card_done" && event.task_id) {
+      const currentBoard = event.board ?? deps.boardSlug;
       void executePostCompletionLifecycle({
         channelId,
-        boardSlug: event.board ?? deps.boardSlug,
+        boardSlug: currentBoard,
         taskId: event.task_id,
         cardTitle,
         assignee: p.assignee ?? null,
         emitRoomMessage: deps.emitRoomMessage,
-      }).catch((err) => {
-        console.warn(`[automation-events] executePostCompletionLifecycle failed:`, err);
-      });
+      })
+        .then(async () => {
+          await checkAndTriggerStarvation({
+            channelId,
+            boardSlug: currentBoard,
+            emitRoomMessage: deps.emitRoomMessage,
+          });
+        })
+        .catch((err) => {
+          console.warn(`[automation-events] executePostCompletionLifecycle failed:`, err);
+        });
     }
 
     // Intermediate transition hook for card_review (Review/Verifier Gate)
