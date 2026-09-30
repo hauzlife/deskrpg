@@ -59,9 +59,63 @@ function resolveAssignee(labels: Record<string, string>): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const payload = (await req.json()) as AlertManagerWebhookPayload;
+    const rawBody = await req.json();
+
+    // Support both Langfuse Monitor Alerts and Prometheus/Alertmanager
+    if (rawBody && rawBody.type === "monitor-alert") {
+      const payload = rawBody.payload || {};
+      const msg = payload.message || {};
+      const severity = payload.severity?.toUpperCase() ?? "ALERT";
+      const priority = severity === "ALERT" ? 10 : 8;
+      const title = `[LANGFUSE-${severity}] ${msg.title || "Qualidade/Custo Comprometido"}`;
+      const permalink = payload.permalink || "https://us.cloud.langfuse.com";
+      const body = [
+        `### 🚨 Alerta de Observabilidade — Langfuse`,
+        `- **Monitor ID:** \`${payload.monitorId || "desconhecido"}\``,
+        `- **Gravidade:** \`${severity}\``,
+        `- **Mensagem:** ${msg.body || "Métrica ultrapassou o limiar de qualidade/custo."}`,
+        `- **Janela:** \`${payload.window || "1h"}\``,
+        `- **Painel Langfuse:** [Acessar Monitor](${permalink})`,
+        `\n> **Ação Autônoma:** Incidente aberto via Webhook de Alertas do Langfuse.`,
+      ].join("\n");
+
+      const boardSlug = "eng-ops";
+      const assignee = "backend-engineer";
+
+      const result = insertTaskSafely(boardSlug, {
+        title,
+        body,
+        assignee,
+        priority,
+        parentId: "langfuse-alert",
+        initialStatus: "ready",
+      });
+
+      try {
+        const tactical = await resolveTacticalRoomId("1586d6fd-d570-4c19-9b98-bde557e95589", "backend-engineer");
+        if (tactical) {
+          await appendRoomMessage({
+            roomId: tactical.roomId,
+            senderId: null,
+            senderName: "Langfuse Sentinel",
+            senderKind: "system",
+            content: `🚨 **[ALERTA LANGFUSE ${severity}]** ${title}\n${msg.body || ""}\n🔗 [Abrir no Langfuse](${permalink})`,
+          });
+        }
+      } catch (e) {
+        console.warn("[langfuse-webhook] Failed to post tactical room alert:", e);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        type: "langfuse-monitor-alert",
+        taskId: result.taskId,
+      });
+    }
+
+    const payload = rawBody as AlertManagerWebhookPayload;
     if (!payload || !Array.isArray(payload.alerts)) {
-      return NextResponse.json({ error: "invalid_payload", message: "Expected Alertmanager webhook payload" }, { status: 400 });
+      return NextResponse.json({ error: "invalid_payload", message: "Expected Alertmanager or Langfuse webhook payload" }, { status: 400 });
     }
 
     const createdTasks: Array<{ taskId: string; board: string; title: string }> = [];

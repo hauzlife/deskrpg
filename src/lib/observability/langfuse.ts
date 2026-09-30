@@ -181,6 +181,32 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
           trace.update({
             output: response,
           });
+
+          // Automated Online Evaluators (Scores)
+          // 1. task_success = 1
+          trace.score({
+            name: 'task_success',
+            value: 1,
+            comment: 'Turn finalized with response',
+          });
+
+          // 2. instruction_following (heuristic evaluation)
+          const hasErrorIndicators = /error|fatal|exception|traceback|cannot connect/i.test(response);
+          const adherenceScore = hasErrorIndicators ? 0.3 : 1.0;
+          trace.score({
+            name: 'instruction_following',
+            value: adherenceScore,
+            comment: hasErrorIndicators ? 'Response contains error indicators' : 'Clean output',
+          });
+
+          // 3. hallucination (heuristic check against fabricated output tokens)
+          const hasFabrication = /\[FABRICATED\]|<invented>/i.test(response);
+          trace.score({
+            name: 'hallucination',
+            value: hasFabrication ? 1 : 0,
+            comment: hasFabrication ? 'Fabrication markers detected' : 'Clean response',
+          });
+
           // Non-blocking flush
           void client.flushAsync().catch(() => {});
         } catch {
@@ -199,6 +225,14 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
               error: errMsg,
             },
           });
+
+          // Automated Score on failure: task_success = 0
+          trace.score({
+            name: 'task_success',
+            value: 0,
+            comment: `Turn failed: ${errMsg}`,
+          });
+
           void client.flushAsync().catch(() => {});
         } catch {
           // ignore
@@ -213,5 +247,31 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
       finalize: () => {},
       fail: () => {},
     };
+  }
+}
+
+/**
+ * Programmatically records an evaluation score to a Langfuse trace
+ */
+export function recordScore(args: {
+  traceId: string;
+  name: 'task_success' | 'instruction_following' | 'relevance' | 'hallucination' | 'user_feedback';
+  value: number | string;
+  comment?: string;
+}): boolean {
+  const client = getLangfuseClient();
+  if (!client) return false;
+  try {
+    client.score({
+      traceId: args.traceId,
+      name: args.name,
+      value: args.value as any,
+      comment: args.comment,
+    });
+    void client.flushAsync().catch(() => {});
+    return true;
+  } catch (err) {
+    console.warn('[langfuse] Failed to record score:', err);
+    return false;
   }
 }
