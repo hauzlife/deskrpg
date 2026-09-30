@@ -24,6 +24,7 @@ import {
   DEFAULT_SWARM_SYNTHESIZER_PROFILE,
   DEFAULT_SWARM_VERIFIER_PROFILE,
   DEFAULT_SWARM_WORKERS,
+  DEFAULT_TASK_PRIORITY,
 } from "@/lib/kanban-defaults";
 import { dispatchOnce } from "@/lib/kanban-dispatch";
 import { resolveProposal } from "@/lib/card-proposals";
@@ -72,6 +73,7 @@ import {
   loadChannelRoster,
   resolveActiveProfile,
   resolveAssignee,
+  resolveDefaultTaskAssignee,
   resolveKanbanChannelContext,
   supportsAttachments,
   type KanbanChannelContext,
@@ -401,8 +403,20 @@ export async function createTask(req: NextRequest, channelId: string) {
   if (!resolved.ok) return resolved.response;
   const ctx = resolved.ctx;
 
-  const assignee = await resolveAssigneeField(ctx, body);
-  if (!assignee.ok) return assignee.response;
+  const requestedAssignee = await resolveAssigneeField(ctx, body);
+  if (!requestedAssignee.ok) return requestedAssignee.response;
+  let assignee: string;
+  if (typeof requestedAssignee.assignee === "string") {
+    assignee = requestedAssignee.assignee;
+  } else {
+    const fallback = await resolveDefaultTaskAssignee(ctx);
+    if (!fallback.ok) return fallback.response;
+    assignee = fallback.profileName;
+  }
+  const priority =
+    typeof body.priority === "string" && body.priority.trim()
+      ? body.priority.trim()
+      : DEFAULT_TASK_PRIORITY;
 
   // Upstream Hermes enforces no completion policy: create the card the way Hermes' own
   // dashboard does, without one. Only a request that explicitly asks for a policy is refused — dropping
@@ -413,7 +427,7 @@ export async function createTask(req: NextRequest, channelId: string) {
     supportsReviewPolicy(ctx.info) ||
     (policyRequested && (await recheckCapability(ctx, supportsReviewPolicy)))
   ) {
-    const review = await resolveReviewPolicy(ctx, body, assignee.assignee);
+    const review = await resolveReviewPolicy(ctx, body, assignee);
     if (!review.ok) return review.response;
     reviewPolicy = review.policy;
   } else if (policyRequested) {
@@ -423,7 +437,8 @@ export async function createTask(req: NextRequest, channelId: string) {
     ...(reviewPolicy ? { review_policy: reviewPolicy } : {}),
     title,
     ...pickTaskFields(body),
-    ...(typeof assignee.assignee === "string" ? { assignee: assignee.assignee } : {}),
+    priority,
+    assignee,
   };
   // Note who requested it at the end of the card body. If there's no character, leave it as-is.
   const mine = await getMyCharacter(ctx.userId);
@@ -432,7 +447,7 @@ export async function createTask(req: NextRequest, channelId: string) {
     const locale = readLocaleCookie(req.headers.get("cookie"));
     task.body = appendRequesterLine(task.body, { name: mine.name, bio: mine.bio }, locale);
   }
-  let res = await ctx.client.kanban.createTask(ctx.boardSlug, task, ctx.userId);
+  let res = await ctx.client.kanban.createTask(ctx.boardSlug, task, assignee);
   if (!res.ok) {
     const fresh = await reprobeAfterPluginRefusal(ctx, res);
     // Only the default policy was ours to add. If the gateway no longer takes policies, create the card the way
@@ -444,7 +459,7 @@ export async function createTask(req: NextRequest, channelId: string) {
       !supportsReviewPolicy(fresh)
     ) {
       delete task.review_policy;
-      res = await ctx.client.kanban.createTask(ctx.boardSlug, task, ctx.userId);
+      res = await ctx.client.kanban.createTask(ctx.boardSlug, task, assignee);
     }
     if (!res.ok) return relayPluginFailure(ctx, res);
   }

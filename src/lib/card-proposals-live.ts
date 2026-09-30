@@ -1,4 +1,4 @@
-import { defaultReviewPolicy } from "@/lib/kanban-access";
+import { DEFAULT_TASK_PRIORITY } from "@/lib/kanban-defaults";
 /**
  * The **real wiring** for card proposal resolution. Judgment lives in `card-proposals.ts`;
  * this file fills its `ResolveDeps` holes with the DB and the plugin client.
@@ -27,7 +27,9 @@ import { cardProposalsGate } from "@/lib/hermes/plugin-capability";
 import { pluginUpgradeRequired } from "@/lib/hermes/plugin-errors";
 import type { PluginResponse } from "@/lib/hermes/plugin-client-types";
 import {
+  defaultReviewPolicy,
   resolveAssignee,
+  resolveDefaultTaskAssignee,
   resolveKanbanChannelContext,
   type KanbanChannelContext,
 } from "@/lib/kanban-access";
@@ -153,16 +155,29 @@ export function liveResolveDeps(): {
 
     createTask: async ({ ctx, task }) => {
       const body = taskBody(task);
+      const defaultAssignee = task.assignee ? null : await resolveDefaultTaskAssignee(ctx);
+      if (defaultAssignee && !defaultAssignee.ok) throw new ProposalStepError(
+        409,
+        "default_assignee_unavailable",
+        "No active default implementation employee is assigned to this channel",
+      );
+      const assignee = task.assignee ?? defaultAssignee?.profileName;
+      if (!assignee) throw new ProposalStepError(
+        409,
+        "default_assignee_unavailable",
+        "No active default implementation employee is assigned to this channel",
+      );
       const res = await ctx.client.kanban.createTask(
         ctx.boardSlug,
         {
           title: task.title,
           ...(defaultReviewPolicy(ctx) ? { review_policy: defaultReviewPolicy(ctx) } : {}),
           ...(body ? { body } : {}),
-          ...(task.assignee ? { assignee: task.assignee } : {}),
+          priority: DEFAULT_TASK_PRIORITY,
+          assignee,
         },
-        // Whoever accepted the proposal ordered the work.
-        ctx.userId,
+        // Attribute automatically generated work to the employee that owns it.
+        assignee,
       );
       if (!res.ok) throwPluginFailure(res);
       return { task: { id: res.data.task.id } };

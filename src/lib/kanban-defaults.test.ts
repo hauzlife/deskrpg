@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   DEFAULT_REVIEW_POLICY,
   DEFAULT_REVIEWER_PROFILE,
+  DEFAULT_TASK_ASSIGNEE_PROFILES,
+  DEFAULT_TASK_PRIORITY,
   DEFAULT_SWARM_SYNTHESIZER_PROFILE,
   DEFAULT_SWARM_VERIFIER_PROFILE,
   DEFAULT_SWARM_WORKERS,
@@ -17,6 +19,8 @@ test("the company swarm defaults name the implementation, verification, synthesi
   assert.equal(DEFAULT_SWARM_VERIFIER_PROFILE, "ml-engineer");
   assert.equal(DEFAULT_SWARM_SYNTHESIZER_PROFILE, "orchestrator");
   assert.equal(DEFAULT_REVIEWER_PROFILE, "reviewer");
+  assert.deepEqual(DEFAULT_TASK_ASSIGNEE_PROFILES, ["backend-engineer", "dev_backend"]);
+  assert.equal(DEFAULT_TASK_PRIORITY, "5");
   assert.deepEqual(DEFAULT_REVIEW_POLICY, {
     version: 1,
     mode: "agent",

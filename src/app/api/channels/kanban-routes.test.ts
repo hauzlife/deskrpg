@@ -349,7 +349,7 @@ test("503 {code, message} when the board cannot be secured", async () => {
   assert.equal(typeof body.message, "string");
 });
 
-test("card creation — assignee is taken as npcId and sent as profile_name, one dispatch + immediate poll", async () => {
+test("card creation — assignee is resolved from npcId, attributed to that employee, and immediately dispatched", async () => {
   server.reset();
   const routes = await loadRoutes();
   const seed = await seedKanbanChannel();
@@ -384,9 +384,9 @@ test("card creation — assignee is taken as npcId and sent as profile_name, one
   assert.equal(sentBody.unknown_field, undefined);
   assert.deepEqual(sentBody.skills, ["research"]);
   assert.equal(sentBody.goal_max_turns, 3);
-  // The creator is the card's requester — the plugin records `created_by: deskrpg:<userId>` from this header, the
-  // person told when an unattended run of the card is blocked.
-  assert.equal(sent.headers["x-deskrpg-actor"], member.id);
+  // Automated creation is attributed to the employee who owns and executes the work, not a
+  // gateway-wide `default` identity.
+  assert.equal(sent.headers["x-deskrpg-actor"], "sophie");
 
   assert.equal(dispatchCalls(before).length, 1, "생성 직후 dispatch 를 한 번 요청한다");
   assert.deepEqual(polled, [seed.channelId], "생성 직후 즉시 폴링을 요청한다");
@@ -466,10 +466,11 @@ test("assignee validation — sleeping NPCs and other channels' NPCs are 400 ass
   );
   assert.deepEqual(polled, []);
 
-  // Created without an assignee, it follows Hermes rules (triage) — the status is not reinterpreted here.
-  const none = await createTask(routes, seed.ownerId, seed.channelId, { title: "담당 없음" });
+  // Created without an assignee, it receives a resolved active default employee and neutral priority.
+  const none = await createTask(routes, seed.ownerId, seed.channelId, { title: "Assigned by default" });
   assert.equal(none.status, 201);
-  assert.equal(none.body.task.assignee, undefined);
+  assert.equal(none.body.task.assignee, "sophie");
+  assert.equal(none.body.task.priority, "5");
 });
 
 test("creation without a title is 400, and Hermes 400/404 pass through with status code and {code, message}", async () => {
@@ -1579,7 +1580,7 @@ test("resolving a proposal — a missing proposal is 404 and the plugin is not c
   );
 });
 
-test("resolving a proposal — if the proposing employee has clocked out, the card is created without an assignee and that is reported", async () => {
+test("resolving a proposal — a clocked-out proposer cannot create an unassigned card", async () => {
   server.reset();
   const route = await import("./[id]/kanban/proposals/[proposalId]/resolve/route");
   const seed = await seedKanbanChannel();
@@ -1592,13 +1593,13 @@ test("resolving a proposal — if the proposing employee has clocked out, the ca
     resolveReq(seed.ownerId, seed.channelId, proposal.proposalId, { choice: "card" }),
     proposalCtx(seed.channelId, proposal.proposalId),
   );
-  assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
-  assert.equal((await res.json()).assigneeDropped, true);
+  assert.equal(res.status, 409, JSON.stringify(await res.clone().json()));
+  assert.equal((await res.json()).code, "default_assignee_unavailable");
   const created = server
     .requests()
     .slice(before)
     .find((r) => r.method === "POST" && r.path.startsWith("/deskrpg/kanban/tasks"));
-  assert.equal((created?.json as Record<string, unknown>).assignee, undefined);
+  assert.equal(created, undefined);
 });
 
 // ---------------------------------------------------------------------------

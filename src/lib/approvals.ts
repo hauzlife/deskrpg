@@ -17,9 +17,10 @@ import { and, eq, inArray } from "drizzle-orm";
 // Import via the dialect-neutral path — `@/db/schema` is PG-only, and `now()` leaks through on SQLite.
 import { approvalTargets, approvals, db } from "@/db";
 import type { CreateTaskBody } from "@/lib/hermes/deskrpg-plugin-types";
+import { DEFAULT_TASK_PRIORITY } from "@/lib/kanban-defaults";
 import { orderApprovalBatch } from "@/lib/approval-batch-order";
 import type { KanbanChannelContext } from "@/lib/kanban-access";
-import { defaultReviewPolicy, resolveAssignee } from "@/lib/kanban-access";
+import { defaultReviewPolicy, resolveAssignee, resolveDefaultTaskAssignee } from "@/lib/kanban-access";
 import { requestEmitRoomMessage } from "@/lib/automation-registry";
 import { appendRoomMessage, ensureOfficeRoom } from "@/lib/chat-rooms";
 import { getChannelOwnerId } from "@/lib/chat-rooms";
@@ -104,7 +105,7 @@ export async function createApprovalBatch(
       continue;
     }
 
-    let assignee: string | undefined;
+    let assignee: string;
     if (item.npcId) {
       const resolved = await resolveAssignee(ctx, item.npcId);
       if (!resolved.ok) {
@@ -115,10 +116,18 @@ export async function createApprovalBatch(
         continue;
       }
       assignee = resolved.profileName;
+    } else {
+      const resolved = await resolveDefaultTaskAssignee(ctx);
+      if (!resolved.ok) {
+        failed.push({ index, errorCode: "default_assignee_unavailable" });
+        continue;
+      }
+      assignee = resolved.profileName;
     }
 
     const body: CreateTaskBody = {
       title: item.title,
+      priority: DEFAULT_TASK_PRIORITY,
       ...(reviewPolicy ? { review_policy: reviewPolicy } : {}),
       // The heart of the gate — set from the start. Changing status after creation lets a dispatch slip through in between.
       initial_status: "blocked",
@@ -128,7 +137,7 @@ export async function createApprovalBatch(
       ...(parents.length > 0 ? { parents: parents as string[] } : {}),
       ...(item.idempotencyKey ? { idempotency_key: item.idempotencyKey } : {}),
     };
-    const res = await ctx.client.kanban.createTask(board, body, ctx.userId);
+    const res = await ctx.client.kanban.createTask(board, body, assignee);
     if (!res.ok) {
       failed.push({ index, errorCode: res.failure.code || "create_failed" });
       continue;

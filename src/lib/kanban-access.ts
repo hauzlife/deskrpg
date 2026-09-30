@@ -34,7 +34,7 @@ import {
 } from "@/lib/cron-access";
 import type { OwnerPluginClient } from "@/lib/hermes/plugin-client-types";
 import type { KanbanReviewPolicy } from "@/lib/hermes/deskrpg-plugin-types";
-import { DEFAULT_REVIEW_POLICY } from "@/lib/kanban-defaults";
+import { DEFAULT_REVIEW_POLICY, DEFAULT_TASK_ASSIGNEE_PROFILES } from "@/lib/kanban-defaults";
 import { supportsReviewPolicy } from "@/lib/hermes/plugin-capability";
 import {
   ensureChannelBoard,
@@ -317,6 +317,31 @@ export async function resolveActiveProfile(
     };
   }
   return { ok: true, profileName: row.profileName, npcId: row.npcId };
+}
+
+export async function resolveDefaultTaskAssignee(
+  ctx: KanbanChannelContext,
+): Promise<AssigneeResult> {
+  for (const profileName of DEFAULT_TASK_ASSIGNEE_PROFILES) {
+    const resolved = await resolveActiveProfile(ctx, profileName);
+    if (resolved.ok) return resolved;
+  }
+
+  const orchestration = await ctx.client.kanban.getOrchestration();
+  const fallback = orchestration.ok ? orchestration.data.resolved_default_assignee : null;
+  if (fallback && fallback !== "default") {
+    const resolved = await resolveActiveProfile(ctx, fallback);
+    if (resolved.ok) return resolved;
+  }
+
+  return {
+    ok: false,
+    response: cronError(
+      409,
+      "default_assignee_unavailable",
+      "No active default implementation employee is assigned to this channel",
+    ),
+  };
 }
 
 // ---------------------------------------------------------------------------
