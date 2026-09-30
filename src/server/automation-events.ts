@@ -36,6 +36,7 @@ import type { OwnerPluginClient } from "@/lib/hermes/plugin-client-types";
 import { listChannelBoards } from "@/lib/kanban-boards";
 import {
   executePostCompletionLifecycle,
+  executeReviewGateHandoff,
   resolveTacticalRoomId,
 } from "@/lib/autonomous-lifecycle-hooks";
 import {
@@ -554,6 +555,20 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
         emitRoomMessage: deps.emitRoomMessage,
       }).catch((err) => {
         console.warn(`[automation-events] executePostCompletionLifecycle failed:`, err);
+      });
+    }
+
+    // Intermediate transition hook for card_review (Review/Verifier Gate)
+    if (kind === "card_review" && event.task_id) {
+      void executeReviewGateHandoff({
+        channelId,
+        boardSlug: event.board ?? deps.boardSlug,
+        taskId: event.task_id,
+        cardTitle,
+        assignee: p.assignee ?? null,
+        emitRoomMessage: deps.emitRoomMessage,
+      }).catch((err: any) => {
+        console.warn(`[automation-events] executeReviewGateHandoff failed:`, err);
       });
     }
 
