@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { insertTaskSafely, resolveTacticalRoomId } from "@/lib/autonomous-lifecycle-hooks";
+import { insertTaskSafely, resolveTacticalRoomId, getSqliteDatabase } from "@/lib/autonomous-lifecycle-hooks";
 import { appendRoomMessage } from "@/lib/chat-rooms";
 import { db, chatRooms } from "@/db";
 import { eq, and } from "drizzle-orm";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 
 interface AlertManagerAlert {
   status: "firing" | "resolved";
@@ -119,18 +122,81 @@ export async function POST(req: NextRequest) {
     }
 
     const createdTasks: Array<{ taskId: string; board: string; title: string }> = [];
+    const resolvedTasks: Array<{ taskId: string; board: string; title: string }> = [];
 
     for (const alert of payload.alerts) {
-      if (alert.status !== "firing") continue;
-
       const labels = alert.labels || {};
       const annotations = alert.annotations || {};
       const boardSlug = resolveBoardSlug(labels);
       const assignee = resolveAssignee(labels);
       const severity = labels.severity?.toUpperCase() ?? "HIGH";
       const priority = severity === "CRITICAL" ? 10 : 8;
-
       const summary = annotations.summary || labels.alertname || "Incidente Operacional Detectado";
+
+      if (alert.status === "resolved") {
+        try {
+          const dbPath = path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
+          if (fs.existsSync(dbPath)) {
+            const sqlite = getSqliteDatabase(dbPath);
+            const searchKeyword = labels.alertname || summary;
+            const tasks = sqlite.prepare(
+              "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE ? OR body LIKE ?)"
+            ).all(`%${searchKeyword}%`, `%${searchKeyword}%`) as Array<{ id: string; title: string; assignee: string }>;
+
+            const now = Math.floor(Date.now() / 1000);
+            for (const t of tasks) {
+              const resolveComment = `✅ [AUTO-RESOLVED] O alerta '${summary}' foi resolvido no Grafana/Alertmanager em ${alert.endsAt || new Date().toISOString()}. Telemetria normalizada.`;
+              try {
+                sqlite.prepare(
+                  "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, 'sre-grafana-alertmanager', ?, ?)"
+                ).run(t.id, resolveComment, now);
+              } catch {}
+
+              sqlite.prepare(
+                "UPDATE tasks SET status = 'done', completed_at = ?, result = ? WHERE id = ?"
+              ).run(now, "auto-resolved by telemetry monitor", t.id);
+
+              try {
+                sqlite.prepare(
+                  "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'completed', ?, ?)"
+                ).run(t.id, JSON.stringify({ summary: resolveComment }), now);
+              } catch {}
+
+              resolvedTasks.push({ taskId: t.id, board: boardSlug, title: t.title });
+
+              // Post resolution notice to tactical room
+              try {
+                const tactical = await resolveTacticalRoomId("1586d6fd-d570-4c19-9b98-bde557e95589", "site-reliability-engineer");
+                if (tactical) {
+                  const resolveNotice = [
+                    `🟢 **[INCIDENTE RESOLVIDO — TELEMETRIA]** \`${t.id}\``,
+                    `**Assunto:** ${t.title}`,
+                    `👤 Notificando: @${t.assignee || assignee}`,
+                    `📋 Board: \`${boardSlug}\``,
+                    `*Status:* Resolvido no Grafana/Alertmanager. Card encerrado automaticamente.`,
+                  ].join("\n");
+
+                  await appendRoomMessage({
+                    roomId: tactical.roomId,
+                    senderId: null,
+                    senderName: "Alertmanager Sentinel",
+                    senderKind: "system",
+                    content: resolveNotice,
+                  });
+                }
+              } catch (noticeErr) {
+                console.warn("[alertmanager-webhook] Failed to post resolution notice:", noticeErr);
+              }
+            }
+          }
+        } catch (resolveErr) {
+          console.error("[alertmanager-webhook] Error auto-resolving task:", resolveErr);
+        }
+        continue;
+      }
+
+      if (alert.status !== "firing") continue;
+
       const description = annotations.description || "Alerta recebido do Alertmanager / Vector telemetry pipeline.";
 
       const title = `[INCIDENT-${severity}][${boardSlug.toUpperCase()}] ${summary}`;
@@ -148,7 +214,7 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
         .join("\n");
 
-      // Insert safely into the target board DB
+      // Insert safely into the target board DB (bypass default WIP of 5 for P0 critical incidents)
       const result = insertTaskSafely(boardSlug, {
         title,
         body,
@@ -156,6 +222,7 @@ export async function POST(req: NextRequest) {
         priority,
         parentId: "root-incident",
         initialStatus: "ready",
+        wipLimit: priority >= 9 ? 100 : 15,
       });
 
       if (result.success && result.taskId && result.reason !== "already_exists") {
@@ -191,6 +258,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       processed: payload.alerts.length,
       tasksCreated: createdTasks,
+      tasksResolved: resolvedTasks,
     });
   } catch (err: any) {
     console.error("[alertmanager-webhook] Error processing webhook:", err);
