@@ -129,6 +129,24 @@ flowchart TD
 
 ---
 
+### Hook 7 — `StarvationSentinelHook` (Alimentação Contínua de Backlog)
+- **Local de Execução:** DeskRPG Lifecycle Hooks (`autonomous-lifecycle-hooks.ts`).
+- **Gatilho:** 0 tarefas ativas (`ready`, `running`, `review`) em qualquer um dos 4 boards de produto.
+- **Comportamento do Hook:** Aciona imediatamente o `product-manager` e `implementation-planner` para decompor metas e manter a tripulação alimentada.
+
+---
+
+### Hook 8 — `BlockerTriageHook` (Triagem Ativa de Bloqueio & Auto-Remediação)
+- **Local de Execução:** DeskRPG Event Sink (`automation-events.ts` -> `autonomous-lifecycle-hooks.ts`).
+- **Gatilho:** Evento `task.status` com `to = "blocked"`.
+- **Comportamento do Hook:**
+  - **Scratch Vazio:** Converte automaticamente o workspace para `worktree` ou `dir` apontando para o repositório do projeto, atualiza para `ready` e relança o agente.
+  - **Quebra de Dependências / .venv:** Cria uma tarefa P0 vinculada para o `@platform-engineer` / `@site-reliability-engineer`, gata o card original em `todo` até a conclusão e notifica a sala tática.
+  - **Critério de Aceite Ambíguo (`needs_input`):** Cria card P0 de decisão para o `@product-manager` reajustar o critério de aceite e emitir o `kanban_unblock`.
+  - **Sentinela de Concorrência & Modelo:** Purga leases de sessões órfãs em `active_sessions.json` e redefine overrides de modelos instáveis para o modelo estável padrão.
+
+---
+
 ## 4. Matriz de Mapeamento dos Hooks por Componente
 
 | Hook ID | Nome do Gancho | Onde Implementar | Gatilho de Disparo | Ação Executada |
@@ -139,6 +157,8 @@ flowchart TD
 | **HK-04** | `ReviewGateTransition` | Hermes (`kanban_transitions.py`) | Card entra em `review` | Spawna `reviewer`, aprova ou solicita mudanças automaticamente. |
 | **HK-05** | `OrchestratorFeedback` | Hermes Cron (`orchestrator`) | A cada 4h (varredura de `done`) | Valida encerramento de épicos e alimenta novas metas no backlog. |
 | **HK-06** | `CircuitBreakerDeadlock`| Hermes Dispatcher Watchdog | `consecutive_failures >= 3` | Isola o card em quarentena e alerta o `Ops Control`. |
+| **HK-07** | `StarvationSentinel`   | DeskRPG (`autonomous-lifecycle-hooks.ts`) | 0 tarefas ativas no board | Aciona PM/Planner para gerar novos cards. |
+| **HK-08** | `BlockerTriage`        | DeskRPG (`autonomous-lifecycle-hooks.ts`) | Card transiciona para `blocked` | Auto-remedia scratch, despacha P0 para Platform ou PM. |
 
 ---
 
@@ -155,3 +175,24 @@ Para transformar a HIVE em uma máquina 100% autônoma que fecha o circuito:
 
 3. **Fase 3 (Garantia de Não-Intervenção):**  
    O usuário/Soberano nunca mais precisa ser perguntado se deseja criar tarefas de correção. Os próprios hooks convertem diagnósticos em ordens de serviço executáveis.
+
+---
+
+## 6. Governança da Arquitetura Híbrida (Hooks Reativos vs. Crons Diários em Batch)
+
+### O Problema do Polling Cego (Depreciação de Crons Curtos)
+Crons recorrentes de frequência agressiva (`every 5m`, `every 10m`, `every 60m`) que disparam agentes LLM geravam três falhas críticas no ecossistema:
+1. **Saturação de Sessões:** O Hermes atingia o teto simultâneo de `6/6 sessões ativas`, congelando o dispatcher.
+2. **Rate Limiting da API:** Disparos contínuos provocavam `HTTP 429 (usage limit)` e `HTTP 400` por tentativas com modelos incompatíveis.
+3. **Tempestades de Concorrência:** Duplicatas de cron configuradas em múltiplos perfis auxiliares (ex: `implementation-planner` e `technical-writer`) disparavam simultaneamente às 09:00, 10:00 e 16:00.
+
+### O Modelo Híbrido Definitivo
+- **Hooks Reativos (Tempo Real / Event-Driven):** O agente dorme em idle até que um fato mensurável ocorra (`card_blocked`, `card_done`, `review_requested`, `starvation`). O hook (`HK-01` a `HK-08`) atua imediatamente com custo zero em repouso.
+- **Crons Diários em Batch (Buffer de 24h):** Cada especialista mantém no máximo **1 cron diário**, distribuído em horários escalonados para evitar concorrência. Esse cron atua como buffer para varrer o lote acumulado, reavaliar metas do dia e garantir higiene dos boards:
+  - `08:30` — SRE / Ops (Health check e estabilidade de infra)
+  - `09:00` — Product Manager (`0835c21f06fa` — Triagem, prioridades e backlog)
+  - `09:30` — Researcher (`ab85d4023023` — Sinais de mercado e concorrentes)
+  - `10:00` — Spec-Driven-Development (`ce02f446fa60` — Especificações e critérios de aceite)
+  - `16:00` — Reviewer (`731166937065` — Gates de qualidade e revisão de PRs)
+  - `16:30` — Feature Rollout (`86dc87498a97` — Estabilidade pós-deploy)
+- **Auditoria de Faxina:** 21 crons agressivos/duplicados foram pausados nos perfis Hermes, garantindo throughput contínuo e eliminando o travamento do gateway.

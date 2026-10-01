@@ -10,6 +10,9 @@ import {
   getSqliteDatabase,
   checkBoardStarvation,
   PRODUCT_BOARDS,
+  resolveWorkspaceForTask,
+  cleanOrphanSessionLeases,
+  executeBlockerTriageLifecycle,
 } from './autonomous-lifecycle-hooks';
 
 test('parseArtifactPyramidSlices extracts cards and routes to correct boards', () => {
@@ -88,4 +91,430 @@ test('checkBoardStarvation identifies empty and starved boards accurately', () =
   // Non-existent board does not fail
   const nonExistent = checkBoardStarvation('unknown-board-xyz-999');
   assert.equal(nonExistent.starved, false);
+});
+
+test('resolveWorkspaceForTask resolves correct project and worktree/dir paths', () => {
+  // Hot Telegram (default traffic)
+  const htTraffic = resolveWorkspaceForTask('hot-telegram', { title: 'Implementar slots de campaign' });
+  assert.equal(htTraffic.workspaceKind, 'worktree');
+  assert.equal(htTraffic.projectId, 'p_8c9879cd');
+  assert.equal(htTraffic.workspacePath, '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic');
+
+  // Hot Telegram (billing hint)
+  const htBilling = resolveWorkspaceForTask('hot-telegram', { title: 'Corrigir webhook de checkout e PIX' });
+  assert.equal(htBilling.workspaceKind, 'worktree');
+  assert.equal(htBilling.projectId, 'p_c21aedb6');
+  assert.equal(htBilling.workspacePath, '/Users/anonymous/Projects/hauzhouse/hot/hot-billing');
+
+  // Mystelia
+  const mystelia = resolveWorkspaceForTask('mystelia', { title: 'Refatorar synastry view' });
+  assert.equal(mystelia.workspaceKind, 'worktree');
+  assert.equal(mystelia.projectId, 'p_d0b4686c');
+  assert.equal(mystelia.workspacePath, '/Users/anonymous/Projects/hauzhouse/esoteric/mystelia');
+
+  // Bloopu (multi-repo umbrella -> dir)
+  const bloopu = resolveWorkspaceForTask('bloopu', { title: 'Deploy telemetry listener' });
+  assert.equal(bloopu.workspaceKind, 'dir');
+  assert.equal(bloopu.projectId, 'p_55adf712');
+  assert.equal(bloopu.workspacePath, '/Users/anonymous/Projects/hauzhouse/crypto');
+
+  // Social
+  const social = resolveWorkspaceForTask('social', { title: 'Publicar agendamento TikTok' });
+  assert.equal(social.workspaceKind, 'worktree');
+  assert.equal(social.projectId, 'p_f9791739');
+  assert.equal(social.workspacePath, '/Users/anonymous/Projects/hauzhouse/social');
+
+  // Explicit override preserved
+  const override = resolveWorkspaceForTask('hot-telegram', {
+    workspaceKind: 'dir',
+    workspacePath: '/custom/path',
+    projectId: 'p_custom',
+  });
+  assert.equal(override.workspaceKind, 'dir');
+  assert.equal(override.workspacePath, '/custom/path');
+  assert.equal(override.projectId, 'p_custom');
+});
+
+test('insertTaskSafely populates workspace and project metadata and bypasses WIP for emergency P0', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  // Setup minimal tasks schema
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  // Insert task on hot-telegram via insertTaskSafely
+  const res = insertTaskSafely('hot-telegram', {
+    title: 'Nova feature de tráfego',
+    body: 'Implementar rotação',
+    assignee: 'backend-engineer',
+    priority: 8,
+    parentId: 't_root',
+    databasePath: dbPath,
+  });
+
+  assert.equal(res.success, true);
+  assert.ok(res.taskId);
+
+  const row = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(res.taskId) as any;
+  assert.equal(row.workspace_kind, 'worktree');
+  assert.equal(row.workspace_path, '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic');
+  assert.equal(row.project_id, 'p_8c9879cd');
+
+  // Fill up active tasks to test WIP limit
+  for (let i = 0; i < 5; i++) {
+    sqlite
+      .prepare("INSERT INTO tasks (id, title, status, created_at) VALUES (?, ?, 'ready', ?)")
+      .run(`t_filler_${i}`, `Filler ${i}`, Math.floor(Date.now() / 1000));
+  }
+
+  // Normal priority task should be blocked by WIP
+  const normalRes = insertTaskSafely('hot-telegram', {
+    title: 'Normal low prio task',
+    body: 'Should be blocked by WIP',
+    assignee: 'backend-engineer',
+    priority: 5,
+    parentId: 't_root',
+    databasePath: dbPath,
+    wipLimit: 5,
+  });
+  assert.equal(normalRes.success, false);
+  assert.match(normalRes.reason!, /WIP limit exceeded/);
+
+  // Emergency P0 task (priority 10) bypasses WIP check
+  const p0Res = insertTaskSafely('hot-telegram', {
+    title: '[P0-EMERGENCY] Hotfix crítico',
+    body: 'Bypasses WIP',
+    assignee: 'backend-engineer',
+    priority: 10,
+    parentId: 't_root',
+    databasePath: dbPath,
+    wipLimit: 5,
+  });
+  assert.equal(p0Res.success, true);
+  assert.ok(p0Res.taskId);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('cleanOrphanSessionLeases removes leases with dead PIDs and preserves live ones', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-session-test-'));
+  const profileDir = path.join(tmpDir, 'profiles', 'backend-engineer', 'runtime');
+  fs.mkdirSync(profileDir, { recursive: true });
+
+  const activePath = path.join(profileDir, 'active_sessions.json');
+  // PID 9999999 is definitely not alive; process.pid is alive
+  const entries = [
+    { lease_id: 'dead_1', pid: 9999999, session_id: 's_dead' },
+    { lease_id: 'live_1', pid: process.pid, session_id: 's_live' },
+  ];
+  fs.writeFileSync(activePath, JSON.stringify({ entries }), 'utf8');
+
+  const cleaned = cleanOrphanSessionLeases(tmpDir);
+  assert.equal(cleaned, 1);
+
+  const updated = JSON.parse(fs.readFileSync(activePath, 'utf8'));
+  assert.equal(updated.entries.length, 1);
+  assert.equal(updated.entries[0].lease_id, 'live_1');
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle auto-heals empty scratch workspace to worktree', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  // Insert a task blocked with empty scratch workspace
+  const taskId = 't_scratch_test';
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, body, assignee, status, priority, created_at, workspace_kind, workspace_path, block_kind, last_failure_error)
+    VALUES (?, ?, ?, ?, 'blocked', 5, ?, 'scratch', '/tmp/empty', 'capability', ?)
+  `).run(
+    taskId,
+    'Auditar e implementar safeguards de slots',
+    'Testar rotinas de tráfego',
+    'backend-engineer',
+    Math.floor(Date.now() / 1000),
+    "kanban_block(kind='capability', reason='Workspace scratch está vazio e não contém checkout Git...')"
+  );
+
+  sqlite.prepare(`
+    INSERT INTO task_events (task_id, kind, payload, created_at)
+    VALUES (?, 'blocked', ?, ?)
+  `).run(
+    taskId,
+    JSON.stringify({ kind: 'capability', reason: 'Workspace scratch está vazio e não contém checkout Git...' }),
+    Math.floor(Date.now() / 1000)
+  );
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'test-chan',
+    boardSlug: 'hot-telegram',
+    taskId,
+    cardTitle: 'Auditar e implementar safeguards de slots',
+    assignee: 'backend-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.action, 'workspace_remediated');
+  assert.equal(result.remediatedTaskId, taskId);
+
+  const updatedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  assert.equal(updatedTask.status, 'ready');
+  assert.equal(updatedTask.workspace_kind, 'worktree');
+  assert.equal(updatedTask.workspace_path, '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic');
+  assert.equal(updatedTask.project_id, 'p_8c9879cd');
+  assert.equal(updatedTask.block_kind, null);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle dispatches P0 env-fix task for ImportError / broken venv', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-env-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const taskId = 't_env_test';
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, body, assignee, status, priority, created_at, workspace_kind, workspace_path, block_kind, last_failure_error)
+    VALUES (?, ?, ?, ?, 'blocked', 5, ?, 'worktree', '/path/to/repo', 'capability', ?)
+  `).run(
+    taskId,
+    'Rodar testes de integridade hot-telegram',
+    'pytest suite',
+    'qa-engineer',
+    Math.floor(Date.now() / 1000),
+    "ImportError: No module named 'Crypto'"
+  );
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'test-chan',
+    boardSlug: 'hot-telegram',
+    taskId,
+    cardTitle: 'Rodar testes de integridade hot-telegram',
+    assignee: 'qa-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.action, 'env_fix_dispatched');
+  assert.equal(result.remediatedTaskId, taskId);
+  assert.ok(result.spawnedTaskId);
+
+  // Original task moved to todo gated by dependency
+  const originalTask = sqlite.prepare('SELECT status, block_kind FROM tasks WHERE id = ?').get(taskId) as any;
+  assert.equal(originalTask.status, 'todo');
+  assert.equal(originalTask.block_kind, 'dependency');
+
+  // Spawned task assigned to platform-engineer with priority 10
+  const spawnedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as any;
+  assert.equal(spawnedTask.assignee, 'platform-engineer');
+  assert.equal(spawnedTask.priority, 10);
+  assert.match(spawnedTask.title, /\[P0-ENV-FIX\]/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle dispatches P0 decision task for needs_input ambiguity', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-needs-input-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const taskId = 't_needs_input_test';
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, body, assignee, status, priority, created_at, workspace_kind, workspace_path, block_kind, last_failure_error)
+    VALUES (?, ?, ?, ?, 'blocked', 5, ?, 'worktree', '/path/to/repo', 'needs_input', ?)
+  `).run(
+    taskId,
+    'Validar primeira venda real pós-QA',
+    'Critério 7: primeira venda real liquidada',
+    'backend-engineer',
+    Math.floor(Date.now() / 1000),
+    'Deploy 100% íntegro, mas requer conversão orgânica ou compra teste autorizada pelo operador'
+  );
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'test-chan',
+    boardSlug: 'hot-telegram',
+    taskId,
+    cardTitle: 'Validar primeira venda real pós-QA',
+    assignee: 'backend-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.action, 'needs_input_dispatched');
+  assert.equal(result.remediatedTaskId, taskId);
+  assert.ok(result.spawnedTaskId);
+
+  const decisionTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as any;
+  assert.equal(decisionTask.assignee, 'product-manager');
+  assert.equal(decisionTask.priority, 10);
+  assert.match(decisionTask.title, /\[P0-DECISÃO\]/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });

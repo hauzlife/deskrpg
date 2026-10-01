@@ -39,6 +39,7 @@ import {
   executeReviewGateHandoff,
   resolveTacticalRoomId,
   checkAndTriggerStarvation,
+  executeBlockerTriageLifecycle,
 } from "@/lib/autonomous-lifecycle-hooks";
 import {
   PLUGIN_EVENT_KINDS,
@@ -583,6 +584,7 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
     }
 
     if (kind === "card_blocked" && event.task_id) {
+      const currentBoard = event.board ?? deps.boardSlug;
       void resolveTacticalRoomId(channelId, p.assignee ?? null)
         .then(async (tacticalRoom) => {
           if (tacticalRoom) {
@@ -597,7 +599,7 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
                 kind: "card_blocked",
                 cardId: event.task_id!,
                 cardTitle,
-                boardSlug: event.board ?? deps.boardSlug,
+                boardSlug: currentBoard,
                 npcName: sender.npcName,
               },
             });
@@ -607,6 +609,18 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
         .catch((err) => {
           console.warn(`[automation-events] Blocker dispatch to tactical room failed:`, err);
         });
+
+      // HK-08: BlockerTriageHook — Active automated resolution and worker summoning
+      void executeBlockerTriageLifecycle({
+        channelId,
+        boardSlug: currentBoard,
+        taskId: event.task_id,
+        cardTitle,
+        assignee: p.assignee ?? null,
+        emitRoomMessage: deps.emitRoomMessage,
+      }).catch((err: any) => {
+        console.warn(`[automation-events] executeBlockerTriageLifecycle failed:`, err);
+      });
     }
 
     return;

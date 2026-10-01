@@ -24,6 +24,123 @@ export const PRODUCT_BOARDS = ['mystelia', 'hot-telegram', 'bloopu', 'social'] a
 export const STARVATION_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes debounce
 export const lastStarvationTrigger = new Map<string, number>();
 
+export interface ProjectMapping {
+  projectId: string;
+  primaryPath: string;
+  defaultWorkspaceKind: 'worktree' | 'dir';
+}
+
+export const CANONICAL_PROJECT_MAPPINGS: Record<string, ProjectMapping> = {
+  mystelia: {
+    projectId: 'p_d0b4686c',
+    primaryPath: '/Users/anonymous/Projects/hauzhouse/esoteric/mystelia',
+    defaultWorkspaceKind: 'worktree',
+  },
+  bloopu: {
+    projectId: 'p_55adf712',
+    primaryPath: '/Users/anonymous/Projects/hauzhouse/crypto',
+    defaultWorkspaceKind: 'dir',
+  },
+  social: {
+    projectId: 'p_f9791739',
+    primaryPath: '/Users/anonymous/Projects/hauzhouse/social',
+    defaultWorkspaceKind: 'worktree',
+  },
+};
+
+export function resolveHotTelegramProject(hintText?: string): ProjectMapping {
+  const lower = (hintText || '').toLowerCase();
+  if (
+    lower.includes('billing') ||
+    lower.includes('checkout') ||
+    lower.includes('payment') ||
+    lower.includes('rebeltransfer') ||
+    lower.includes('order') ||
+    lower.includes('pix')
+  ) {
+    return {
+      projectId: 'p_c21aedb6',
+      primaryPath: '/Users/anonymous/Projects/hauzhouse/hot/hot-billing',
+      defaultWorkspaceKind: 'worktree',
+    };
+  }
+  return {
+    projectId: 'p_8c9879cd',
+    primaryPath: '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic',
+    defaultWorkspaceKind: 'worktree',
+  };
+}
+
+export function resolveWorkspaceForTask(
+  boardSlug: string,
+  spec: {
+    title?: string;
+    body?: string;
+    assignee?: string;
+    workspaceKind?: 'scratch' | 'worktree' | 'dir';
+    workspacePath?: string;
+    projectId?: string;
+  }
+): {
+  workspaceKind: 'scratch' | 'worktree' | 'dir';
+  workspacePath: string | null;
+  projectId: string | null;
+} {
+  // If caller explicitly passed non-scratch workspaceKind and workspacePath, preserve it
+  if (spec.workspaceKind && spec.workspaceKind !== 'scratch' && spec.workspacePath) {
+    return {
+      workspaceKind: spec.workspaceKind,
+      workspacePath: spec.workspacePath,
+      projectId: spec.projectId ?? null,
+    };
+  }
+
+  const combinedHint = `${spec.title ?? ''} ${spec.body ?? ''}`;
+
+  // 1. Hot Telegram resolution
+  if (boardSlug === 'hot-telegram') {
+    const mapping = resolveHotTelegramProject(combinedHint);
+    return {
+      workspaceKind: mapping.defaultWorkspaceKind,
+      workspacePath: mapping.primaryPath,
+      projectId: mapping.projectId,
+    };
+  }
+
+  // 2. Core Product Boards
+  if (boardSlug in CANONICAL_PROJECT_MAPPINGS) {
+    const mapping = CANONICAL_PROJECT_MAPPINGS[boardSlug];
+    return {
+      workspaceKind: mapping.defaultWorkspaceKind,
+      workspacePath: mapping.primaryPath,
+      projectId: mapping.projectId,
+    };
+  }
+
+  // 3. Fallback: Check board.json under ~/.hermes/kanban/boards/<boardSlug>/board.json
+  try {
+    const boardJsonPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'board.json');
+    if (fs.existsSync(boardJsonPath)) {
+      const boardData = JSON.parse(fs.readFileSync(boardJsonPath, 'utf8'));
+      if (boardData.default_workdir && typeof boardData.default_workdir === 'string') {
+        const isGit = fs.existsSync(path.join(boardData.default_workdir, '.git'));
+        return {
+          workspaceKind: isGit ? 'worktree' : 'dir',
+          workspacePath: boardData.default_workdir,
+          projectId: boardData.project_id || null,
+        };
+      }
+    }
+  } catch {}
+
+  // 4. Default fallback: keep scratch if no repo/worktree could be resolved
+  return {
+    workspaceKind: spec.workspaceKind ?? 'scratch',
+    workspacePath: spec.workspacePath ?? null,
+    projectId: spec.projectId ?? null,
+  };
+}
+
 // Dynamic SQLite loader compatible with Node 22/24/26 built-in node:sqlite or better-sqlite3
 export function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean }) {
   try {
@@ -796,6 +913,10 @@ export function insertTaskSafely(
     updateComment?: string;
     /** Test-only/embedded callers may provide an isolated SQLite database. */
     databasePath?: string;
+    workspaceKind?: 'scratch' | 'worktree' | 'dir';
+    workspacePath?: string;
+    projectId?: string;
+    bypassWipLimit?: boolean;
   }
 ): { success: boolean; taskId?: string; reason?: string } {
   let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
@@ -848,12 +969,14 @@ export function insertTaskSafely(
     }
 
     // WIP Limit Check (performed inside the same transaction as deduplication).
+    // Emergency P0 tasks (priority >= 9 or bypassWipLimit) bypass WIP checks to prevent deadlocks.
+    const isEmergencyP0 = spec.priority >= 9 || spec.bypassWipLimit === true;
     const wipLimit = spec.wipLimit ?? 5;
     const activeRow = sqlite
       .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review')")
       .get() as { count?: number } | undefined;
     const activeCount = Number(activeRow?.count ?? 0);
-    if (activeCount >= wipLimit) {
+    if (!isEmergencyP0 && activeCount >= wipLimit) {
       const reason = `WIP limit exceeded on board "${boardSlug}": ${activeCount} active tasks (limit is ${wipLimit})`;
       sqlite.exec('ROLLBACK');
       transactionOpen = false;
@@ -877,12 +1000,45 @@ export function insertTaskSafely(
     const now = Math.floor(Date.now() / 1000);
     const status = spec.initialStatus ?? 'ready';
 
-    sqlite
-      .prepare(
-        `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind)
-         VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, 'scratch')`
-      )
-      .run(taskId, spec.title, spec.body, spec.assignee, status, spec.priority, now);
+    const resolvedWs = resolveWorkspaceForTask(boardSlug, {
+      title: spec.title,
+      body: spec.body,
+      assignee: spec.assignee,
+      workspaceKind: spec.workspaceKind,
+      workspacePath: spec.workspacePath,
+      projectId: spec.projectId,
+    });
+
+    const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as any[]).map((c) => c.name);
+    const hasWsPath = columns.includes('workspace_path');
+    const hasProjId = columns.includes('project_id');
+
+    if (hasWsPath && hasProjId) {
+      sqlite
+        .prepare(
+          `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, project_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?)`
+        )
+        .run(
+          taskId,
+          spec.title,
+          spec.body,
+          spec.assignee,
+          status,
+          spec.priority,
+          now,
+          resolvedWs.workspaceKind,
+          resolvedWs.workspacePath,
+          resolvedWs.projectId
+        );
+    } else {
+      sqlite
+        .prepare(
+          `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind)
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?)`
+        )
+        .run(taskId, spec.title, spec.body, spec.assignee, status, spec.priority, now, resolvedWs.workspaceKind);
+    }
 
     // Link parent
     try {
@@ -897,7 +1053,7 @@ export function insertTaskSafely(
     transactionOpen = false;
 
     console.log(
-      `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee})`
+      `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee}, workspace: ${resolvedWs.workspaceKind} @ ${resolvedWs.workspacePath})`
     );
     return { success: true, taskId };
   } catch (err: any) {
@@ -911,4 +1067,436 @@ export function insertTaskSafely(
     console.warn(`[autonomous-hooks] Failed to insert task on ${boardSlug}:`, err);
     return { success: false, reason: err?.message ?? String(err) };
   }
+}
+
+/**
+ * Sentinela de Concorrência e Sessões:
+ * Scans active_sessions.json in all profiles and prunes stale leases whose PIDs are no longer alive.
+ */
+export function cleanOrphanSessionLeases(hermesHome?: string): number {
+  const home = hermesHome ?? path.join(os.homedir(), '.hermes');
+  const profilesDir = path.join(home, 'profiles');
+  let cleanedCount = 0;
+  const dirsToCheck: string[] = [];
+  if (fs.existsSync(profilesDir)) {
+    try {
+      const entries = fs.readdirSync(profilesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          dirsToCheck.push(path.join(profilesDir, entry.name));
+        }
+      }
+    } catch {}
+  }
+  dirsToCheck.push(home);
+
+  for (const dir of dirsToCheck) {
+    const activePath = path.join(dir, 'runtime', 'active_sessions.json');
+    if (!fs.existsSync(activePath)) continue;
+    try {
+      const raw = fs.readFileSync(activePath, 'utf8');
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data.entries) || data.entries.length === 0) continue;
+      const alive: any[] = [];
+      let profileCleaned = 0;
+      for (const entry of data.entries) {
+        const pid = Number(entry.pid);
+        if (!pid) continue;
+        let isAlive = false;
+        try {
+          process.kill(pid, 0);
+          isAlive = true;
+        } catch {
+          isAlive = false;
+        }
+        if (isAlive) {
+          alive.push(entry);
+        } else {
+          profileCleaned++;
+        }
+      }
+      if (profileCleaned > 0) {
+        data.entries = alive;
+        fs.writeFileSync(activePath, JSON.stringify(data, null, 2), 'utf8');
+        cleanedCount += profileCleaned;
+      }
+    } catch {}
+  }
+  return cleanedCount;
+}
+
+export interface BlockerTriageResult {
+  action: 'workspace_remediated' | 'env_fix_dispatched' | 'needs_input_dispatched' | 'session_cleaned' | 'none';
+  remediatedTaskId?: string;
+  spawnedTaskId?: string;
+  details?: string;
+}
+
+/**
+ * HK-08: BlockerTriageHook — Active Automated Triage of Blocked Cards
+ *
+ * Diagnoses why a task blocked and summons the specialized role or applies auto-remediation:
+ * - Scratch workspace empty: converts to worktree/dir pointing to the project repository and unblocks.
+ * - Broken environment (.venv, missing libs): creates P0 repair card for platform-engineer / SRE and gates original task.
+ * - needs_input: creates P0 decision card for product-manager / orchestrator to clarify acceptance criteria.
+ * - Session saturation (6/6) or invalid model: cleans dead session leases, clears invalid model override, resets to ready.
+ */
+export async function executeBlockerTriageLifecycle(args: {
+  channelId: string;
+  boardSlug: string;
+  taskId: string;
+  cardTitle: string;
+  assignee: string | null;
+  emitRoomMessage?: (roomId: string, message: any) => void;
+  databasePath?: string;
+  bypassDispatchSpawn?: boolean;
+}): Promise<BlockerTriageResult> {
+  const { channelId, boardSlug, taskId, cardTitle, assignee, emitRoomMessage } = args;
+  const dbPath = args.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+  if (!fs.existsSync(dbPath)) {
+    return { action: 'none', details: 'board_db_not_found' };
+  }
+
+  let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
+  try {
+    sqlite = getSqliteDatabase(dbPath);
+  } catch (err: any) {
+    return { action: 'none', details: `db_open_failed: ${String(err?.message ?? err)}` };
+  }
+
+  const taskRow = sqlite
+    .prepare(
+      'SELECT id, title, body, assignee, status, priority, block_kind, last_failure_error, workspace_kind, workspace_path, project_id FROM tasks WHERE id = ?'
+    )
+    .get(taskId) as any;
+
+  if (!taskRow) {
+    return { action: 'none', details: 'task_not_found' };
+  }
+
+  const eventRow = sqlite
+    .prepare(
+      "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'blocked' ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(taskId) as any;
+
+  let eventPayload: Record<string, any> = {};
+  if (eventRow?.payload) {
+    try {
+      eventPayload = JSON.parse(eventRow.payload);
+    } catch {}
+  }
+
+  const blockKind = String(eventPayload.kind || taskRow.block_kind || '').toLowerCase();
+  const blockReason = [
+    eventPayload.reason ?? '',
+    taskRow.last_failure_error ?? '',
+    taskRow.body ?? '',
+  ].join(' ');
+
+  const tacticalRoom = await resolveTacticalRoomId(channelId, assignee);
+  const now = Math.floor(Date.now() / 1000);
+
+  // --- Branch A: Scratch workspace empty or missing git repo ---
+  const isScratchIssue =
+    (blockKind === 'capability' || blockKind === '') &&
+    (taskRow.workspace_kind === 'scratch' ||
+      /workspace.*scratch.*(?:vazio|empty)|scratch.*vazio|não contém checkout|empty workspace|not inside a git repo|workspace scratch está vazio/i.test(
+        blockReason
+      ));
+
+  if (isScratchIssue) {
+    const resolved = resolveWorkspaceForTask(boardSlug, {
+      title: taskRow.title,
+      body: taskRow.body,
+      assignee: taskRow.assignee,
+    });
+
+    if (resolved.workspacePath && resolved.workspaceKind !== 'scratch') {
+      sqlite
+        .prepare(
+          `UPDATE tasks
+           SET workspace_kind = ?,
+               workspace_path = ?,
+               project_id = ?,
+               status = 'ready',
+               block_kind = NULL,
+               last_failure_error = NULL
+           WHERE id = ?`
+        )
+        .run(resolved.workspaceKind, resolved.workspacePath, resolved.projectId, taskId);
+
+      try {
+        sqlite
+          .prepare(
+            'INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)'
+          )
+          .run(
+            taskId,
+            'blocker-triage-hook',
+            `[BlockerTriageHook] Workspace efêmero 'scratch' convertido automaticamente para '${resolved.workspaceKind}' no repositório ${resolved.workspacePath} (projeto: ${resolved.projectId}). Card promovido para 'ready'.`,
+            now
+          );
+        sqlite
+          .prepare(
+            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+          )
+          .run(
+            taskId,
+            JSON.stringify({
+              reason: 'auto_healed_scratch_workspace_to_worktree',
+              project_id: resolved.projectId,
+              workspace_path: resolved.workspacePath,
+              workspace_kind: resolved.workspaceKind,
+            }),
+            now
+          );
+      } catch (e) {
+        console.warn(`[autonomous-hooks] Failed to record unblock event:`, e);
+      }
+
+      if (tacticalRoom) {
+        const content =
+          `🔧 **[AUTO-REMEDIAÇÃO DE WORKSPACE]** \`${taskId}\` — ${cardTitle}\n` +
+          `Workspace efêmero scratch convertido para \`${resolved.workspaceKind}\` em \`${resolved.workspacePath}\`.\n` +
+          `Status redefinido para **ready** — agente relançado automaticamente!`;
+        try {
+          const msg = await appendRoomMessage({
+            roomId: tacticalRoom.roomId,
+            senderKind: 'system',
+            senderId: null,
+            senderName: 'Blocker Triage Sentinel',
+            content,
+            notice: {
+              kind: 'card_done',
+              cardId: taskId,
+              cardTitle,
+              boardSlug,
+              npcName: assignee ?? 'system',
+            },
+          });
+          if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+        } catch {}
+      }
+
+      if (!args.bypassDispatchSpawn) {
+        try {
+          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+            detached: true,
+            stdio: 'ignore',
+          }).unref();
+        } catch {}
+      }
+
+      return {
+        action: 'workspace_remediated',
+        remediatedTaskId: taskId,
+        details: `Converted to ${resolved.workspaceKind} at ${resolved.workspacePath}`,
+      };
+    }
+  }
+
+  // --- Branch B: Broken environment / missing dependencies (.venv, missing libs, crypto, daphne, etc.) ---
+  const isEnvIssue =
+    /import(?:error)?:\s*no module named|modulenotfounderror|crypto|daphne|django_extensions|poetry.*not found|broken environment|missing dependency/i.test(
+      blockReason
+    );
+
+  if (isEnvIssue) {
+    const dedupKey = `env-fix-${boardSlug}`;
+    const insertRes = insertTaskSafely(boardSlug, {
+      title: `[P0-ENV-FIX] Reparar ambiente virtual e dependências para ${taskId} (${boardSlug})`,
+      body:
+        `Tarefa P0 criada automaticamente pelo BlockerTriageHook devido a falha de dependências/ambiente no card ${taskId} ("${cardTitle}").\n\n` +
+        `Erro identificado:\n\`\`\`\n${blockReason.slice(0, 1000)}\n\`\`\`\n\n` +
+        `Ação para @platform-engineer / @site-reliability-engineer:\n` +
+        `1. Reparar .venv/poetry/pip e dependências ausentes no repositório.\n` +
+        `2. Rodar a suíte de testes unitários para validar a integridade.\n` +
+        `3. Finalizar este card para desbloquear automaticamente a tarefa dependente ${taskId}.`,
+      assignee: 'platform-engineer',
+      priority: 10,
+      parentId: taskId,
+      dedupKey,
+      databasePath: args.databasePath,
+    });
+
+    if (insertRes.success && insertRes.taskId) {
+      try {
+        sqlite
+          .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+          .run(insertRes.taskId, taskId, now);
+        sqlite.prepare("UPDATE tasks SET status = 'todo', block_kind = 'dependency' WHERE id = ?").run(taskId);
+      } catch (e) {
+        console.warn(`[autonomous-hooks] Failed to link dependency task:`, e);
+      }
+
+      if (tacticalRoom) {
+        const content =
+          `🛠️ **[AUTO-TRIAGEM DE AMBIENTE]** \`${taskId}\` — ${cardTitle}\n` +
+          `Detectada quebra de dependências no ambiente (.venv/libs).\n` +
+          `Card de reparo P0 \`${insertRes.taskId}\` criado para @platform-engineer. Card original aguardando correção na fila.`;
+        try {
+          const msg = await appendRoomMessage({
+            roomId: tacticalRoom.roomId,
+            senderKind: 'system',
+            senderId: null,
+            senderName: 'Blocker Triage Sentinel',
+            content,
+            notice: {
+              kind: 'card_blocked',
+              cardId: taskId,
+              cardTitle,
+              boardSlug,
+              npcName: assignee ?? 'system',
+            },
+          });
+          if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+        } catch {}
+      }
+
+      if (!args.bypassDispatchSpawn) {
+        try {
+          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+            detached: true,
+            stdio: 'ignore',
+          }).unref();
+        } catch {}
+      }
+
+      return {
+        action: 'env_fix_dispatched',
+        remediatedTaskId: taskId,
+        spawnedTaskId: insertRes.taskId,
+        details: `Dispatched env fix card ${insertRes.taskId}`,
+      };
+    }
+  }
+
+  // --- Branch C: needs_input / Acceptance Criteria Ambiguity ---
+  const isNeedsInput =
+    blockKind === 'needs_input' ||
+    /needs_input|requer.*autoriz|aguardando.*decis|conversão orgânica|compra teste autorizada|ambiguidade de aceite/i.test(
+      blockReason
+    );
+
+  if (isNeedsInput) {
+    const dedupKey = `needs-input-${taskId}`;
+    const insertRes = insertTaskSafely(boardSlug, {
+      title: `[P0-DECISÃO] Desbloquear especificação / critério de aceite para ${taskId}`,
+      body:
+        `O card ${taskId} ("${cardTitle}") foi paralisado por 'needs_input' / ambiguidade de aceite.\n\n` +
+        `Motivo do bloqueio registrado:\n${blockReason.slice(0, 1500)}\n\n` +
+        `Instruções para @product-manager / @orchestrator:\n` +
+        `1. Avaliar se o critério de aceite exige intervenção física externa ou validação de compra teste.\n` +
+        `2. Ajustar os critérios de aceite do card ${taskId} para permitir simulação aprovada ou sign-off alternativo.\n` +
+        `3. Emitir kanban_unblock para liberar a esteira autônoma.`,
+      assignee: 'product-manager',
+      priority: 10,
+      parentId: taskId,
+      dedupKey,
+      databasePath: args.databasePath,
+    });
+
+    if (insertRes.success && insertRes.taskId) {
+      if (tacticalRoom) {
+        const content =
+          `📋 **[AUTO-TRIAGEM PRODUCT OFFICE]** \`${taskId}\` — ${cardTitle}\n` +
+          `Paralisado por critério externo ('needs_input').\n` +
+          `Card de decisão P0 \`${insertRes.taskId}\` atribuído a @product-manager para redefinir aceite e destravar a execução.`;
+        try {
+          const msg = await appendRoomMessage({
+            roomId: tacticalRoom.roomId,
+            senderKind: 'system',
+            senderId: null,
+            senderName: 'Blocker Triage Sentinel',
+            content,
+            notice: {
+              kind: 'card_blocked',
+              cardId: taskId,
+              cardTitle,
+              boardSlug,
+              npcName: assignee ?? 'system',
+            },
+          });
+          if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+        } catch {}
+      }
+
+      if (!args.bypassDispatchSpawn) {
+        try {
+          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+            detached: true,
+            stdio: 'ignore',
+          }).unref();
+        } catch {}
+      }
+
+      return {
+        action: 'needs_input_dispatched',
+        remediatedTaskId: taskId,
+        spawnedTaskId: insertRes.taskId,
+        details: `Dispatched decision card ${insertRes.taskId}`,
+      };
+    }
+  }
+
+  // --- Branch D: Session ceiling 6/6 or invalid model override ---
+  const isSessionOrModelIssue =
+    /active session limit|model.*not supported|gpt-5\.3-codex-spark/i.test(blockReason);
+
+  if (isSessionOrModelIssue) {
+    const cleaned = cleanOrphanSessionLeases();
+    sqlite
+      .prepare(
+        `UPDATE tasks
+         SET model_override = NULL,
+             provider_override = NULL,
+             status = 'ready',
+             block_kind = NULL,
+             last_failure_error = NULL
+         WHERE id = ?`
+      )
+      .run(taskId);
+
+    if (tacticalRoom) {
+      const content =
+        `⚡ **[SENTINELA DE SESSÃO / MODELO]** \`${taskId}\` — ${cardTitle}\n` +
+        `Detectada saturação de sessões ou modelo incompatível.\n` +
+        `Limpos ${cleaned} leases órfãos, resetado override para o modelo estável do perfil e card retornado a **ready**.`;
+      try {
+        const msg = await appendRoomMessage({
+          roomId: tacticalRoom.roomId,
+          senderKind: 'system',
+          senderId: null,
+          senderName: 'Blocker Triage Sentinel',
+          content,
+          notice: {
+            kind: 'card_done',
+            cardId: taskId,
+            cardTitle,
+            boardSlug,
+            npcName: assignee ?? 'system',
+          },
+        });
+        if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+      } catch {}
+    }
+
+    if (!args.bypassDispatchSpawn) {
+      try {
+        spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+      } catch {}
+    }
+
+    return {
+      action: 'session_cleaned',
+      remediatedTaskId: taskId,
+      details: `Cleaned ${cleaned} orphan sessions, cleared model override, moved to ready`,
+    };
+  }
+
+  return { action: 'none', details: 'no_matching_triage_rule' };
 }
