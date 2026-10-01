@@ -213,5 +213,7 @@ Implementado em `src/lib/github-lifecycle-hooks.ts` e exposto via `POST /api/web
 | **Gate 4 (QA Homologation)**| `@qa-engineer` | `issue_comment` (no PR) | QA homologa cenários em staging, podendo comitar testes adicionais na branch. | Comentário formal `[QA-APROVADO]` no PR. |
 | **Gate 5 (PM Acceptance)** | `@product-manager` | `issue_comment` (no PR) | PM valida critérios de aceite do card e negócio, emitindo o sign-off final. | Comentário formal `[APROVADO]` do PM. |
 
-### Fusão Segura
-Somente após a validação simultânea dos 5 portões, o hook autoriza e executa a fusão atômica via `gh pr merge --squash --delete-branch`.
+### Fusão Segura & Regra Inviolável de Transição para 'Done'
+1. **Permanência Obrigatória em 'Review':** Enquanto o PR estiver tramitando nos 5 Portões de Fusão, o card no Kanban **deve permanecer estritamente na coluna `review`** (ou `blocked` em caso de conflito ou quebra de CI).
+2. **Intercepção de 'Done' Antecipado (`enforceReviewGateForPrTasks`):** O `automation-events.ts` intercepta qualquer tentativa de mover um card vinculado a PR aberto para `done`, revertendo o status para `review` e alertando a sala tática.
+3. **Merge Efetivo como Gatilho Exclusivo:** O card só é promovido para `done` quando o webhook do GitHub confirma o merge real (`action: 'closed'`, `merged: true`) após a aprovação de todos os 5 portões.
