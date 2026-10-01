@@ -141,6 +141,15 @@ test('createScrumCeremonyMeeting instantiates authentic DeskRPG meeting with vis
   const savedOutcome = JSON.parse(row.outcome_json || row.outcomeJson);
   assert.equal(savedOutcome.decisions.length >= 2, true);
   assert.equal(savedOutcome.followUps.length, 2);
+  assert.ok(savedOutcome.registered);
+  assert.equal(savedOutcome.registered.taskIds.length, 2);
+
+  // Verify that tasks were autonomously created in Kanban
+  const sqliteKanban = getSqliteDatabase(kanbanDbPath);
+  const tasksInKanban = sqliteKanban.prepare('SELECT id, title, status, assignee FROM tasks').all() as any[];
+  assert.equal(tasksInKanban.length, 2);
+  assert.equal(tasksInKanban[0].assignee, 'backend-engineer');
+  assert.equal(tasksInKanban[1].assignee, 'qa-engineer');
 
   // Test Sprint Review with Sovereign (Artur Modesto)
   const reviewResult = await createScrumCeremonyMeeting({

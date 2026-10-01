@@ -14,7 +14,12 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { getSqliteDatabase, resolveTacticalRoomId } from './autonomous-lifecycle-hooks';
+import { spawn } from 'node:child_process';
+import {
+  getSqliteDatabase,
+  resolveTacticalRoomId,
+  insertTaskSafely,
+} from './autonomous-lifecycle-hooks';
 import { appendRoomMessage } from './chat-rooms';
 import type { MeetingOutcome, MeetingFollowUp } from './meeting-outcome';
 
@@ -484,14 +489,26 @@ export async function createScrumCeremonyMeeting(
     }
   }
 
-  // Also bind to Kanban board if it is Sprint Planning
-  if (ceremonyType === 'sprint_planning') {
+  // Also bind to Kanban board and auto-register cards if it is Sprint Planning or has followUps
+  if (ceremonyType === 'sprint_planning' || outcome.followUps.length > 0) {
     await sealSprintGoal({
       boardSlug,
       goal: sprintGoal,
       sprintTag,
       databasePath: kanbanDbPath,
       channelId,
+      emitRoomMessage,
+    });
+
+    // Autonomous PM Registration: Immediately registers followUps to Kanban without human prompts
+    await autonomousRegisterMeetingOutcome({
+      meetingId,
+      boardSlug,
+      channelId,
+      approverProfile: 'product-manager',
+      deskrpgDbPath: deskDb,
+      kanbanDbPath,
+      bypassDispatchSpawn: kanbanDbPath !== undefined,
       emitRoomMessage,
     });
   }
@@ -813,3 +830,200 @@ export async function generateSprintRetrospective(args: {
     aarReport,
   };
 }
+
+/**
+ * Autonomous Meeting Outcome Registrar:
+ * In a 100% autonomous organization, the Product Manager / Orchestrator inspects
+ * the meeting outcome draft and automatically approves and creates the cards
+ * directly on the Kanban board (with workspace worktrees, acceptance criteria,
+ * assignees and parent dependencies), marking the meeting as registered.
+ * Eliminates the human waiting bottleneck.
+ */
+export async function autonomousRegisterMeetingOutcome(args: {
+  meetingId: string;
+  boardSlug?: string;
+  channelId?: string;
+  approverProfile?: string;
+  deskrpgDbPath?: string;
+  kanbanDbPath?: string;
+  bypassDispatchSpawn?: boolean;
+  emitRoomMessage?: (roomId: string, message: any) => void;
+}): Promise<{
+  success: boolean;
+  registeredTasksCount: number;
+  taskIds: string[];
+  boardSlug: string;
+  details?: string;
+}> {
+  const {
+    meetingId,
+    channelId = 'c_general',
+    approverProfile = 'product-manager',
+    deskrpgDbPath,
+    kanbanDbPath,
+    bypassDispatchSpawn,
+    emitRoomMessage,
+  } = args;
+
+  const deskDb =
+    deskrpgDbPath ??
+    (fs.existsSync(path.join(process.cwd(), 'data', 'deskrpg.db'))
+      ? path.join(process.cwd(), 'data', 'deskrpg.db')
+      : path.join(os.homedir(), '.hermes', 'deskrpg.db'));
+
+  if (!fs.existsSync(deskDb)) {
+    return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: 'unknown', details: 'deskrpg_db_not_found' };
+  }
+
+  const sqliteDesk = getSqliteDatabase(deskDb);
+  const row = sqliteDesk
+    .prepare('SELECT id, channel_id, topic, outcome_json FROM meeting_minutes WHERE id = ?')
+    .get(meetingId) as { id: string; channel_id: string; topic: string; outcome_json: string } | undefined;
+
+  if (!row) {
+    return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: 'unknown', details: 'meeting_not_found' };
+  }
+
+  let outcome: MeetingOutcome | null = null;
+  try {
+    outcome = JSON.parse(row.outcome_json);
+  } catch {}
+
+  if (!outcome || !outcome.followUps || outcome.followUps.length === 0) {
+    return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: 'unknown', details: 'no_followups_in_outcome' };
+  }
+
+  if (outcome.registered && outcome.registered.taskIds.length > 0) {
+    return {
+      success: true,
+      registeredTasksCount: outcome.registered.taskIds.length,
+      taskIds: outcome.registered.taskIds,
+      boardSlug: outcome.registered.boardSlug,
+      details: 'already_registered',
+    };
+  }
+
+  const resolvedBoardSlug = args.boardSlug || outcome.project?.name || 'hot-telegram';
+  const targetKanbanDb =
+    kanbanDbPath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', resolvedBoardSlug, 'kanban.db');
+
+  if (!fs.existsSync(targetKanbanDb)) {
+    return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: resolvedBoardSlug, details: 'kanban_db_not_found' };
+  }
+
+  const sqliteKanban = getSqliteDatabase(targetKanbanDb);
+  const createdTaskIds: string[] = [];
+  const now = Math.floor(Date.now() / 1000);
+  const nowIso = new Date().toISOString();
+
+  // Create each follow-up task on the Kanban board
+  for (let i = 0; i < outcome.followUps.length; i++) {
+    const item = outcome.followUps[i];
+    const assignee = item.assigneeName || 'backend-engineer';
+
+    // Map parent task IDs if item.after is defined
+    const parentTaskIds = (item.after || [])
+      .map((pIdx) => createdTaskIds[pIdx])
+      .filter(Boolean);
+
+    const hasUnfinishedParents = parentTaskIds.length > 0;
+    const initialStatus = hasUnfinishedParents ? 'todo' : 'ready';
+
+    const cardBody = [
+      item.summary || `Tarefa fatiada na reunião ${row.topic}.`,
+      '',
+      `### 🎯 Critérios de Aceite:`,
+      item.acceptance || 'Definidos na cerimônia Scrum.',
+      '',
+      `---`,
+      `*Originado da reunião DeskRPG: [${row.topic}](/meetings/${row.id})*`,
+      `<!-- meeting:${row.id}:${i} -->`,
+    ].join('\n');
+
+    const dedupKey = `meeting:${row.id}:${i}`;
+
+    const insertResult = insertTaskSafely(resolvedBoardSlug, {
+      title: item.title,
+      body: cardBody,
+      assignee,
+      priority: 8,
+      parentId: parentTaskIds[0] || '',
+      initialStatus,
+      dedupKey,
+      databasePath: targetKanbanDb,
+      bypassWipLimit: true,
+    });
+
+    if (insertResult.success && insertResult.taskId) {
+      createdTaskIds.push(insertResult.taskId);
+
+      // Link any additional parents in task_links
+      for (const parentId of parentTaskIds) {
+        try {
+          sqliteKanban
+            .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+            .run(parentId, insertResult.taskId, now);
+        } catch {}
+      }
+    }
+  }
+
+  // Update meeting_minutes to mark as registered
+  outcome.registered = {
+    boardSlug: resolvedBoardSlug,
+    tenant: null,
+    taskIds: createdTaskIds,
+    by: approverProfile,
+    at: nowIso,
+  };
+
+  sqliteDesk
+    .prepare('UPDATE meeting_minutes SET outcome_json = ? WHERE id = ?')
+    .run(JSON.stringify(outcome), meetingId);
+
+  // Announce in tactical room
+  const tacticalRoom = await resolveTacticalRoomId(channelId, approverProfile);
+  if (tacticalRoom) {
+    const content =
+      `🤖 **[AUTONOMOUS PM — REGISTRO DE CARDS NA ESTEIRA]** \`${meetingId}\`\n` +
+      `O **@${approverProfile}** aprovou e registrou **${createdTaskIds.length} tarefas** no board **${resolvedBoardSlug}**.\n` +
+      `Status: Coluna **ready** (e **todo** para tarefas com dependências).\n` +
+      `Tarefas geradas: ${createdTaskIds.map((id) => `\`${id}\``).join(', ')}`;
+
+    try {
+      const msg = await appendRoomMessage({
+        roomId: tacticalRoom.roomId,
+        senderKind: 'system',
+        senderId: null,
+        senderName: 'Autonomous Scrum Registrar',
+        content,
+        notice: {
+          kind: 'card_done',
+          cardId: meetingId,
+          cardTitle: row.topic,
+          boardSlug: resolvedBoardSlug,
+          npcName: approverProfile,
+        },
+      });
+      if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+    } catch {}
+  }
+
+  if (!bypassDispatchSpawn) {
+    try {
+      spawn('hermes', ['kanban', '--board', resolvedBoardSlug, 'dispatch'], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+    } catch {}
+  }
+
+  return {
+    success: true,
+    registeredTasksCount: createdTaskIds.length,
+    taskIds: createdTaskIds,
+    boardSlug: resolvedBoardSlug,
+    details: `Autonomously registered ${createdTaskIds.length} tasks to ${resolvedBoardSlug} by ${approverProfile}`,
+  };
+}
+
