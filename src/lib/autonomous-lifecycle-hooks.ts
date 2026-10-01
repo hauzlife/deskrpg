@@ -790,25 +790,87 @@ export function insertTaskSafely(
     parentId: string;
     wipLimit?: number;
     initialStatus?: 'todo' | 'ready';
+    /** Optional stable marker used by event consumers to deduplicate active tasks. */
+    dedupKey?: string;
+    /** Comment and event payload to append when an active dedupKey match is found. */
+    updateComment?: string;
+    /** Test-only/embedded callers may provide an isolated SQLite database. */
+    databasePath?: string;
   }
 ): { success: boolean; taskId?: string; reason?: string } {
+  let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
+  let transactionOpen = false;
   try {
-    const dbPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+    const dbPath = spec.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
     if (!fs.existsSync(dbPath)) return { success: false, reason: 'board_db_not_found' };
 
-    // WIP Limit Check
-    const wip = checkBoardWipLimit(boardSlug, spec.wipLimit ?? 5);
-    if (!wip.allowed) {
-      console.warn(`[autonomous-hooks] Task creation blocked by WIP: ${wip.reason}`);
-      return { success: false, reason: wip.reason };
+    sqlite = getSqliteDatabase(dbPath);
+    // Serialize the deduplication read with the eventual insert. Without this, two concurrent
+    // Alertmanager retries can both observe no matching task and create duplicate incidents.
+    sqlite.exec('BEGIN IMMEDIATE');
+    transactionOpen = true;
+
+    let existing: { id?: string } | undefined;
+    if (spec.dedupKey) {
+      existing = sqlite
+        .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ? LIMIT 1")
+        .get(`%${spec.dedupKey}%`) as { id?: string } | undefined;
+
+      if (existing?.id) {
+        if (spec.updateComment) {
+          const now = Math.floor(Date.now() / 1000);
+          try {
+            sqlite
+              .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+              .run(existing.id, 'alertmanager-webhook', spec.updateComment, now);
+          } catch (commentErr) {
+            console.warn(`[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`, commentErr);
+          }
+          try {
+            sqlite
+              .prepare(
+                "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)"
+              )
+              .run(
+                existing.id,
+                JSON.stringify({ source: 'alertmanager-webhook', action: 'deduplicated', dedupKey: spec.dedupKey }),
+                now
+              );
+          } catch (eventErr) {
+            console.warn(`[autonomous-hooks] Failed to append dedup event for ${existing.id}:`, eventErr);
+          }
+        }
+        sqlite.exec('COMMIT');
+        transactionOpen = false;
+        console.log(`[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
+        return { success: true, taskId: existing.id, reason: 'updated_existing' };
+      }
     }
 
-    const sqlite = getSqliteDatabase(dbPath);
-    // Check if task already exists (idempotency by title)
-    const existing = sqlite.prepare('SELECT id FROM tasks WHERE title = ?').get(spec.title) as { id?: string } | undefined;
-    if (existing?.id) {
-      console.log(`[autonomous-hooks] Task already exists on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
-      return { success: true, taskId: existing.id, reason: 'already_exists' };
+    // WIP Limit Check (performed inside the same transaction as deduplication).
+    const wipLimit = spec.wipLimit ?? 5;
+    const activeRow = sqlite
+      .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review')")
+      .get() as { count?: number } | undefined;
+    const activeCount = Number(activeRow?.count ?? 0);
+    if (activeCount >= wipLimit) {
+      const reason = `WIP limit exceeded on board "${boardSlug}": ${activeCount} active tasks (limit is ${wipLimit})`;
+      sqlite.exec('ROLLBACK');
+      transactionOpen = false;
+      console.warn(`[autonomous-hooks] Task creation blocked by WIP: ${reason}`);
+      return { success: false, reason };
+    }
+
+    // Preserve title idempotency for non-alert callers. Alert callers use dedupKey so
+    // distinct targets with the same human-readable summary remain independent cards.
+    if (!spec.dedupKey) {
+      existing = sqlite.prepare('SELECT id FROM tasks WHERE title = ?').get(spec.title) as { id?: string } | undefined;
+      if (existing?.id) {
+        sqlite.exec('COMMIT');
+        transactionOpen = false;
+        console.log(`[autonomous-hooks] Task already exists on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
+        return { success: true, taskId: existing.id, reason: 'already_exists' };
+      }
     }
 
     const taskId = 't_' + randomUUID().replace(/-/g, '').slice(0, 8);
@@ -831,11 +893,21 @@ export function insertTaskSafely(
       // ignore link collision
     }
 
+    sqlite.exec('COMMIT');
+    transactionOpen = false;
+
     console.log(
       `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee})`
     );
     return { success: true, taskId };
   } catch (err: any) {
+    if (transactionOpen && sqlite) {
+      try {
+        sqlite.exec('ROLLBACK');
+      } catch {
+        // Preserve the original insertion error.
+      }
+    }
     console.warn(`[autonomous-hooks] Failed to insert task on ${boardSlug}:`, err);
     return { success: false, reason: err?.message ?? String(err) };
   }

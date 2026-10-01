@@ -46,4 +46,38 @@ describe("Alertmanager Webhook endpoint (/api/alerts/webhook)", () => {
     assert.equal(data.ok, true);
     assert.equal(data.processed, 1);
   });
+
+  it("processes resolved alerts and closes matching open tasks", async () => {
+    const payload = {
+      status: "resolved",
+      alerts: [
+        {
+          status: "resolved",
+          labels: {
+            alertname: "TelegramBotLinkRestricted",
+            severity: "critical",
+            tier: "business-traffic",
+            bot: "@caroline_sil_3507_bot",
+          },
+          annotations: {
+            summary: "Vínculo inativo ou restrito detectado",
+            description: "Alert cleared",
+          },
+          endsAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const req = new NextRequest("http://localhost:3000/api/alerts/webhook", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.processed, 1);
+    assert.ok(Array.isArray(data.tasksResolved));
+  });
 });

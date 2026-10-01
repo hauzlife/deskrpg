@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 
 interface AlertManagerAlert {
   status: "firing" | "resolved";
@@ -25,6 +26,58 @@ interface AlertManagerWebhookPayload {
   alerts: AlertManagerAlert[];
   commonLabels?: Record<string, string>;
   commonAnnotations?: Record<string, string>;
+}
+
+const ALERT_FINGERPRINT_PREFIX = "alertmanager-fingerprint:";
+const TARGET_LABEL_KEYS = ["target", "service", "endpoint", "instance", "server", "host", "namespace", "bot", "group"];
+
+function normalizeFingerprintPart(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalized || fallback;
+}
+
+function resolveAlertTarget(labels: Record<string, string>): string {
+  const targetParts = TARGET_LABEL_KEYS
+    .filter((key) => labels[key]?.trim())
+    .map((key) => `${key}=${normalizeFingerprintPart(labels[key], "unknown")}`);
+  return targetParts.length > 0 ? targetParts.join("|") : "global";
+}
+
+function resolveAlertWindow(alert: AlertManagerAlert): string {
+  const labels = alert.labels || {};
+  const annotations = alert.annotations || {};
+  return (
+    labels.window ||
+    labels.evaluation_window ||
+    labels.alert_window ||
+    labels.for ||
+    annotations.window ||
+    annotations.evaluation_window ||
+    "default"
+  );
+}
+
+/**
+ * Stable incident identity for Alertmanager retries.
+ *
+ * The source deliberately excludes summary/description because those can be enriched between
+ * retries. An incident is equivalent when alert name, tier, target and evaluation window
+ * are equivalent. The fallback window is intentionally stable when a producer omits a window label.
+ * The digest keeps the marker compact enough for SQLite body matching.
+ */
+export function buildAlertFingerprint(alert: AlertManagerAlert): string {
+  const labels = alert.labels || {};
+  const source = [
+    normalizeFingerprintPart(labels.alertname, "unknown-alert"),
+    normalizeFingerprintPart(labels.tier || labels.service_tier, "default-tier"),
+    normalizeFingerprintPart(resolveAlertTarget(labels), "global"),
+    normalizeFingerprintPart(resolveAlertWindow(alert), "default"),
+  ].join("\u001f");
+  return createHash("sha256").update(source, "utf8").digest("hex").slice(0, 24);
+}
+
+function fingerprintMarker(fingerprint: string): string {
+  return `<!-- ${ALERT_FINGERPRINT_PREFIX}${fingerprint} -->`;
 }
 
 // Map alert tier/project to canonical Kanban board slug
@@ -122,11 +175,14 @@ export async function POST(req: NextRequest) {
     }
 
     const createdTasks: Array<{ taskId: string; board: string; title: string }> = [];
+    const updatedTasks: Array<{ taskId: string; board: string; title: string }> = [];
     const resolvedTasks: Array<{ taskId: string; board: string; title: string }> = [];
 
     for (const alert of payload.alerts) {
       const labels = alert.labels || {};
       const annotations = alert.annotations || {};
+      const fingerprint = buildAlertFingerprint(alert);
+      const dedupKey = fingerprintMarker(fingerprint);
       const boardSlug = resolveBoardSlug(labels);
       const assignee = resolveAssignee(labels);
       const severity = labels.severity?.toUpperCase() ?? "HIGH";
@@ -139,9 +195,24 @@ export async function POST(req: NextRequest) {
           if (fs.existsSync(dbPath)) {
             const sqlite = getSqliteDatabase(dbPath);
             const searchKeyword = labels.alertname || summary;
-            const tasks = sqlite.prepare(
-              "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE ? OR body LIKE ?)"
-            ).all(`%${searchKeyword}%`, `%${searchKeyword}%`) as Array<{ id: string; title: string; assignee: string }>;
+            const tasks = (
+              labels.window ||
+              labels.evaluation_window ||
+              labels.alert_window ||
+              labels.for ||
+              annotations.window ||
+              annotations.evaluation_window
+                ? sqlite
+                    .prepare(
+                      "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ?"
+                    )
+                    .all(`%${dedupKey}%`)
+                : sqlite
+                    .prepare(
+                      "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE ? OR body LIKE ?)"
+                    )
+                    .all(`%${searchKeyword}%`, `%${searchKeyword}%`)
+            ) as Array<{ id: string; title: string; assignee: string }>;
 
             const now = Math.floor(Date.now() / 1000);
             for (const t of tasks) {
@@ -201,6 +272,7 @@ export async function POST(req: NextRequest) {
 
       const title = `[INCIDENT-${severity}][${boardSlug.toUpperCase()}] ${summary}`;
       const body = [
+        dedupKey,
         `### 🚨 Alerta de Produção — Alertmanager`,
         `- **Alerta:** \`${labels.alertname || "Desconhecido"}\``,
         `- **Gravidade:** \`${severity}\``,
@@ -223,9 +295,13 @@ export async function POST(req: NextRequest) {
         parentId: "root-incident",
         initialStatus: "ready",
         wipLimit: priority >= 9 ? 100 : 15,
+        dedupKey,
+        updateComment: `🔁 [ALERTA DUPLICADO INIBIDO] O evento '${summary}' foi recebido novamente para o mesmo alerta/tier/alvo/janela (fingerprint ${fingerprint}). Card ativo mantido e evento registrado.`,
       });
 
-      if (result.success && result.taskId && result.reason !== "already_exists") {
+      if (result.success && result.taskId && result.reason === "updated_existing") {
+        updatedTasks.push({ taskId: result.taskId, board: boardSlug, title });
+      } else if (result.success && result.taskId && result.reason !== "already_exists") {
         createdTasks.push({ taskId: result.taskId, board: boardSlug, title });
 
         // Dispatch alert to DeskRPG Tactical Room (NOC / War Room)
@@ -258,6 +334,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       processed: payload.alerts.length,
       tasksCreated: createdTasks,
+      tasksUpdated: updatedTasks,
       tasksResolved: resolvedTasks,
     });
   } catch (err: any) {
