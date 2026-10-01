@@ -309,7 +309,7 @@ export async function POST(req: NextRequest) {
         priority,
         parentId: "root-incident",
         initialStatus: "ready",
-        wipLimit: priority >= 9 ? 100 : 15,
+        wipLimit: priority >= 9 ? 100 : 50,
         dedupKey,
         updateComment: `🔁 [ALERTA DUPLICADO INIBIDO] O evento '${summary}' foi recebido novamente para o mesmo alerta/tier/alvo/janela (fingerprint ${fingerprint}). Card ativo mantido e evento registrado.`,
       });
