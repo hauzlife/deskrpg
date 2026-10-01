@@ -141,6 +141,26 @@ export function resolveKanbanDbPath(boardSlug: string, overridePath?: string): s
 }
 
 /**
+ * Resolves the real channel ID bound to a board slug from DeskRPG database
+ */
+export function resolveChannelForBoard(boardSlug: string, deskDbPath?: string): string {
+  const deskDb = resolveDeskRpgDbPath(deskDbPath);
+  if (fs.existsSync(deskDb)) {
+    try {
+      const sqlite = getSqliteDatabase(deskDb, { readonly: true });
+      const row = sqlite
+        .prepare('SELECT channel_id FROM channel_kanban_boards WHERE board_slug = ? LIMIT 1')
+        .get(boardSlug) as { channel_id?: string } | undefined;
+      if (row?.channel_id) return row.channel_id;
+
+      const firstChannel = sqlite.prepare('SELECT id FROM channels LIMIT 1').get() as { id?: string } | undefined;
+      if (firstChannel?.id) return firstChannel.id;
+    } catch {}
+  }
+  return '104c62be-838c-48ad-8351-368b1493a304';
+}
+
+/**
  * Generate standard ISO week sprint tag, e.g. "sprint-40-2026"
  */
 export function generateSprintTag(date = new Date()): string {
@@ -545,13 +565,18 @@ export async function createScrumCeremonyMeeting(
   const {
     ceremonyType,
     boardSlug,
-    channelId = 'c_general',
+    channelId,
     initiatorId = null,
     sprintGoal = 'Atingir marco de entrega da sprint',
     deskrpgDbPath,
     kanbanDbPath,
     emitRoomMessage,
   } = input;
+
+  const deskDb = resolveDeskRpgDbPath(deskrpgDbPath);
+  const targetKanbanDb = resolveKanbanDbPath(boardSlug, kanbanDbPath);
+  const resolvedChannelId =
+    channelId && channelId !== 'c_general' ? channelId : resolveChannelForBoard(boardSlug, deskDb);
 
   const sprintTag = input.sprintTag ?? generateSprintTag();
   const meetingId = `m_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -562,7 +587,7 @@ export async function createScrumCeremonyMeeting(
     sprintTag,
     boardSlug,
     sprintGoal,
-    kanbanDbPath,
+    kanbanDbPath: targetKanbanDb,
   });
 
   const { keyTopics, conclusions, outcome } = generateCeremonyOutcome(ceremonyType, {
@@ -584,8 +609,6 @@ export async function createScrumCeremonyMeeting(
             : `🧠 [Scrum: Sprint Retrospective — ${sprintTag.toUpperCase()} — ${boardSlug}]`;
 
   // Persist into DeskRPG database (meeting_minutes table)
-  const deskDb = resolveDeskRpgDbPath(deskrpgDbPath);
-
   if (fs.existsSync(deskDb)) {
     try {
       const sqlite = getSqliteDatabase(deskDb);
@@ -599,7 +622,7 @@ export async function createScrumCeremonyMeeting(
         )
         .run(
           meetingId,
-          channelId,
+          resolvedChannelId,
           topic,
           transcript,
           JSON.stringify(participants),
@@ -681,7 +704,7 @@ export async function createScrumCeremonyMeeting(
       goal: sprintGoal,
       sprintTag,
       databasePath: kanbanDbPath,
-      channelId,
+      channelId: resolvedChannelId,
       emitRoomMessage,
     });
 
@@ -689,7 +712,7 @@ export async function createScrumCeremonyMeeting(
     await autonomousRegisterMeetingOutcome({
       meetingId,
       boardSlug,
-      channelId,
+      channelId: resolvedChannelId,
       approverProfile: 'product-manager',
       deskrpgDbPath: deskDb,
       kanbanDbPath,
@@ -699,7 +722,7 @@ export async function createScrumCeremonyMeeting(
   }
 
   // Emit room message into tactical room
-  const tacticalRoom = await resolveTacticalRoomId(channelId, 'product-manager');
+  const tacticalRoom = await resolveTacticalRoomId(resolvedChannelId, 'product-manager');
   if (tacticalRoom) {
     const roomContent =
       `🏛️ **[CERIMÔNIA SCRUM REALIZADA NO DESKRPG]** \`${meetingId}\`\n` +
