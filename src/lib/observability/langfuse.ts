@@ -1,18 +1,33 @@
 /**
- * Langfuse Observability Integration for DeskRPG (TypeScript SDK)
+ * Langfuse Observability Integration for DeskRPG (v4 / JS/TS SDK v5)
  *
- * Implements tracing best practices following the official Langfuse AI Skill:
- * - Fail-open design: does not block or throw if credentials are not configured
- * - Captures meaningful inputs/outputs (excluding sensitive tokens/keys)
- * - Session grouping: groups turns under session_id for multi-turn conversation tracing
- * - Tags: categorizes by role, interaction kind ('1:1' vs 'meeting'), and DeskRPG context
- * - Observes tool calls and model responses with proper span hierarchy
+ * Implements tracing best practices following the official Langfuse v4 specifications:
+ * - Observations-first data model: correlating attributes (userId, sessionId, tags, metadata)
+ *   are propagated to root and all child observations via propagateAttributes scope.
+ * - Root observation captures overall turn input and output.
+ * - Standard OpenTelemetry NodeSDK setup with LangfuseSpanProcessor.
+ * - Score recording via @langfuse/client LangfuseClient score manager.
+ * - Fail-open design: does not block or throw if credentials are not configured.
  */
 
-import { Langfuse } from 'langfuse';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { LangfuseSpanProcessor } from '@langfuse/otel';
+import {
+  startObservation,
+  propagateAttributes,
+  type LangfuseSpan,
+} from '@langfuse/tracing';
+import { LangfuseClient } from '@langfuse/client';
 
-let langfuseInstance: Langfuse | null = null;
+let otelSdk: NodeSDK | null = null;
+let langfuseClient: LangfuseClient | null = null;
 let initialized = false;
+
+export function _resetLangfuseStateForTesting(): void {
+  initialized = false;
+  langfuseClient = null;
+  otelSdk = null;
+}
 
 export function getLangfuseConfig(): {
   publicKey?: string;
@@ -40,35 +55,54 @@ export function getLangfuseConfig(): {
   return { publicKey, secretKey, baseUrl, enabled };
 }
 
-export function getLangfuseClient(): Langfuse | null {
+export function initLangfuse(): boolean {
   if (initialized) {
-    return langfuseInstance;
+    return Boolean(langfuseClient);
   }
 
   const { publicKey, secretKey, baseUrl, enabled } = getLangfuseConfig();
 
   if (!enabled || !publicKey || !secretKey) {
     initialized = true;
-    langfuseInstance = null;
-    return null;
+    otelSdk = null;
+    langfuseClient = null;
+    return false;
   }
 
   try {
-    langfuseInstance = new Langfuse({
+    const spanProcessor = new LangfuseSpanProcessor({
       publicKey,
       secretKey,
       baseUrl,
-      flushAt: 1, // Flush actively in serverless/Node environments
-      flushInterval: 2000,
     });
-    console.log(`[langfuse] Observability client initialized connected to ${baseUrl}`);
+
+    otelSdk = new NodeSDK({
+      spanProcessors: [spanProcessor],
+    });
+    otelSdk.start();
+
+    langfuseClient = new LangfuseClient({
+      publicKey,
+      secretKey,
+      baseUrl,
+    });
+
+    console.log(`[langfuse] v4 Observability client initialized connected to ${baseUrl}`);
   } catch (err) {
-    console.warn('[langfuse] Failed to initialize client:', err);
-    langfuseInstance = null;
+    console.warn('[langfuse] Failed to initialize v4 client:', err);
+    otelSdk = null;
+    langfuseClient = null;
   }
 
   initialized = true;
-  return langfuseInstance;
+  return Boolean(langfuseClient);
+}
+
+export function getLangfuseClient(): LangfuseClient | null {
+  if (!initialized) {
+    initLangfuse();
+  }
+  return langfuseClient;
 }
 
 export interface NpcTraceContext {
@@ -87,6 +121,7 @@ export interface NpcTraceContext {
 }
 
 export interface ActiveNpcTrace {
+  traceId?: string;
   onToolCall: (toolName: string, input?: unknown) => void;
   onToolComplete: (toolName: string, output?: unknown) => void;
   finalize: (response: string, metadata?: Record<string, unknown>) => void;
@@ -94,14 +129,15 @@ export interface ActiveNpcTrace {
 }
 
 /**
- * Starts a Langfuse trace for an NPC conversation turn or meeting.
- * Returns an ActiveNpcTrace interface to track lifecycle and tool calls.
+ * Starts a Langfuse v4 observation hierarchy for an NPC conversation turn or meeting.
+ * Uses propagateAttributes to enforce the observations-first model where sessionId,
+ * userId, tags, and metadata live on all child observations (including cost-bearing generations).
  * Fails open (no-op) if Langfuse is not enabled.
  */
 export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
-  const client = getLangfuseClient();
+  const isReady = initLangfuse();
 
-  if (!client) {
+  if (!isReady || !langfuseClient) {
     return {
       onToolCall: () => {},
       onToolComplete: () => {},
@@ -116,44 +152,74 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
     if (ctx.npcName) tags.push(ctx.npcName);
     if (ctx.role) tags.push(ctx.role);
 
-    const trace = client.trace({
-      id: ctx.traceId,
-      name: traceName,
-      sessionId: ctx.sessionId ?? null,
-      userId: ctx.userId ?? null,
-      input: {
-        prompt: ctx.prompt,
-        instructions: ctx.instructions,
-        conversationHistory: ctx.conversationHistory,
-      },
-      metadata: {
-        ...ctx.metadata,
-        npcName: ctx.npcName,
-        role: ctx.role,
-        multiParty: ctx.multiParty,
-      },
-      tags,
-    });
+    // Convert metadata values to strings for propagateAttributes compliance
+    const stringMetadata: Record<string, string> = {};
+    if (ctx.metadata) {
+      for (const [key, val] of Object.entries(ctx.metadata)) {
+        if (val !== undefined && val !== null) {
+          stringMetadata[key] = typeof val === 'string' ? val : JSON.stringify(val);
+        }
+      }
+    }
+    if (ctx.npcName) stringMetadata.npcName = ctx.npcName;
+    if (ctx.role) stringMetadata.role = ctx.role;
+    if (ctx.multiParty !== undefined) stringMetadata.multiParty = String(ctx.multiParty);
 
-    const generation = trace.generation({
-      name: `generation: ${ctx.name}`,
-      input: {
-        prompt: ctx.prompt,
-        conversationHistory: ctx.conversationHistory,
-      },
-      modelParameters: ctx.instructions ? { instructions: ctx.instructions } : undefined,
-    });
+    let rootSpan: LangfuseSpan | null = null;
+    let generationSpan: LangfuseSpan | null = null;
 
-    const activeToolSpans = new Map<string, any>();
+    propagateAttributes(
+      {
+        traceName,
+        sessionId: ctx.sessionId,
+        userId: ctx.userId,
+        tags,
+        metadata: stringMetadata,
+      },
+      () => {
+        // Root observation captures overall turn input
+        rootSpan = startObservation(traceName, {
+          input: {
+            prompt: ctx.prompt,
+            instructions: ctx.instructions,
+            conversationHistory: ctx.conversationHistory,
+          },
+        });
+
+        // Generation child observation captures model prompt and parameters
+        if (rootSpan) {
+          generationSpan = (rootSpan as LangfuseSpan).startObservation(
+            `generation: ${ctx.name}`,
+            {
+              input: {
+                prompt: ctx.prompt,
+                conversationHistory: ctx.conversationHistory,
+              },
+              modelParameters: ctx.instructions ? { instructions: ctx.instructions } : undefined,
+            },
+            { asType: 'generation' }
+          );
+        }
+      }
+    );
+
+    const activeToolSpans = new Map<string, LangfuseSpan>();
+    const capturedRootSpan = rootSpan as LangfuseSpan | null;
+    const capturedGenSpan = generationSpan as LangfuseSpan | null;
+    const traceId = capturedRootSpan?.traceId;
 
     return {
+      traceId,
       onToolCall: (toolName: string, input?: unknown) => {
         try {
-          if (!toolName) return;
-          const span = trace.span({
-            name: `tool: ${toolName}`,
-            input: input ?? { invoked: true },
-          });
+          if (!toolName || !capturedRootSpan) return;
+          const span = capturedRootSpan.startObservation(
+            `tool: ${toolName}`,
+            {
+              input: input ?? { invoked: true },
+            },
+            { asType: 'tool' }
+          );
           activeToolSpans.set(toolName, span);
         } catch {
           // ignore observation errors
@@ -163,9 +229,10 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
         try {
           const span = activeToolSpans.get(toolName);
           if (span) {
-            span.end({
+            span.update({
               output: output ?? { success: true },
             });
+            span.end();
             activeToolSpans.delete(toolName);
           }
         } catch {
@@ -174,41 +241,52 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
       },
       finalize: (response: string, metadata?: Record<string, unknown>) => {
         try {
-          generation.end({
-            output: response,
-            metadata,
-          });
-          trace.update({
-            output: response,
-          });
+          if (capturedGenSpan) {
+            capturedGenSpan.update({
+              output: response,
+              metadata,
+            });
+            capturedGenSpan.end();
+          }
 
-          // Automated Online Evaluators (Scores)
-          // 1. task_success = 1
-          trace.score({
-            name: 'task_success',
-            value: 1,
-            comment: 'Turn finalized with response',
-          });
+          if (capturedRootSpan) {
+            capturedRootSpan.update({
+              output: response,
+            });
+            capturedRootSpan.end();
+          }
 
-          // 2. instruction_following (heuristic evaluation)
-          const hasErrorIndicators = /error|fatal|exception|traceback|cannot connect/i.test(response);
-          const adherenceScore = hasErrorIndicators ? 0.3 : 1.0;
-          trace.score({
-            name: 'instruction_following',
-            value: adherenceScore,
-            comment: hasErrorIndicators ? 'Response contains error indicators' : 'Clean output',
-          });
+          // Automated Online Evaluators (Scores recorded via LangfuseClient)
+          if (traceId && langfuseClient) {
+            // 1. task_success = 1
+            langfuseClient.score.create({
+              traceId,
+              name: 'task_success',
+              value: 1,
+              comment: 'Turn finalized with response',
+            });
 
-          // 3. hallucination (heuristic check against fabricated output tokens)
-          const hasFabrication = /\[FABRICATED\]|<invented>/i.test(response);
-          trace.score({
-            name: 'hallucination',
-            value: hasFabrication ? 1 : 0,
-            comment: hasFabrication ? 'Fabrication markers detected' : 'Clean response',
-          });
+            // 2. instruction_following (heuristic evaluation)
+            const hasErrorIndicators = /error|fatal|exception|traceback|cannot connect/i.test(response);
+            const adherenceScore = hasErrorIndicators ? 0.3 : 1.0;
+            langfuseClient.score.create({
+              traceId,
+              name: 'instruction_following',
+              value: adherenceScore,
+              comment: hasErrorIndicators ? 'Response contains error indicators' : 'Clean output',
+            });
 
-          // Non-blocking flush
-          void client.flushAsync().catch(() => {});
+            // 3. hallucination (heuristic check against fabricated output tokens)
+            const hasFabrication = /\[FABRICATED\]|<invented>/i.test(response);
+            langfuseClient.score.create({
+              traceId,
+              name: 'hallucination',
+              value: hasFabrication ? 1 : 0,
+              comment: hasFabrication ? 'Fabrication markers detected' : 'Clean response',
+            });
+
+            void langfuseClient.flush().catch(() => {});
+          }
         } catch {
           // ignore
         }
@@ -216,31 +294,43 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
       fail: (error: unknown) => {
         try {
           const errMsg = error instanceof Error ? error.message : String(error);
-          generation.end({
-            level: 'ERROR',
-            statusMessage: errMsg,
-          });
-          trace.update({
-            metadata: {
-              error: errMsg,
-            },
-          });
+          if (capturedGenSpan) {
+            capturedGenSpan.update({
+              level: 'ERROR',
+              statusMessage: errMsg,
+            });
+            capturedGenSpan.end();
+          }
+
+          if (capturedRootSpan) {
+            capturedRootSpan.update({
+              level: 'ERROR',
+              statusMessage: errMsg,
+              metadata: {
+                error: errMsg,
+              },
+            });
+            capturedRootSpan.end();
+          }
 
           // Automated Score on failure: task_success = 0
-          trace.score({
-            name: 'task_success',
-            value: 0,
-            comment: `Turn failed: ${errMsg}`,
-          });
+          if (traceId && langfuseClient) {
+            langfuseClient.score.create({
+              traceId,
+              name: 'task_success',
+              value: 0,
+              comment: `Turn failed: ${errMsg}`,
+            });
 
-          void client.flushAsync().catch(() => {});
+            void langfuseClient.flush().catch(() => {});
+          }
         } catch {
           // ignore
         }
       },
     };
   } catch (err) {
-    console.warn('[langfuse] Error creating trace:', err);
+    console.warn('[langfuse] Error creating v4 trace observations:', err);
     return {
       onToolCall: () => {},
       onToolComplete: () => {},
@@ -251,10 +341,11 @@ export function startNpcTrace(ctx: NpcTraceContext): ActiveNpcTrace {
 }
 
 /**
- * Programmatically records an evaluation score to a Langfuse trace
+ * Programmatically records an evaluation score to a Langfuse trace / observation
  */
 export function recordScore(args: {
   traceId: string;
+  observationId?: string;
   name: 'task_success' | 'instruction_following' | 'relevance' | 'hallucination' | 'user_feedback';
   value: number | string;
   comment?: string;
@@ -262,13 +353,14 @@ export function recordScore(args: {
   const client = getLangfuseClient();
   if (!client) return false;
   try {
-    client.score({
+    client.score.create({
       traceId: args.traceId,
+      observationId: args.observationId,
       name: args.name,
       value: args.value as any,
       comment: args.comment,
     });
-    void client.flushAsync().catch(() => {});
+    void client.flush().catch(() => {});
     return true;
   } catch (err) {
     console.warn('[langfuse] Failed to record score:', err);
