@@ -196,3 +196,22 @@ Crons recorrentes de frequência agressiva (`every 5m`, `every 10m`, `every 60m`
   - `16:00` — Reviewer (`731166937065` — Gates de qualidade e revisão de PRs)
   - `16:30` — Feature Rollout (`86dc87498a97` — Estabilidade pós-deploy)
 - **Auditoria de Faxina:** 21 crons agressivos/duplicados foram pausados nos perfis Hermes, garantindo throughput contínuo e eliminando o travamento do gateway.
+
+---
+
+## 7. Pipeline de Fusão de Pull Requests em 5 Portões (GitHub Webhooks)
+
+Implementado em `src/lib/github-lifecycle-hooks.ts` e exposto via `POST /api/webhooks/github`:
+
+### O Funil dos 5 Portões de Fusão
+
+| Portão | Responsável | Evento de Disparo | Ação do Hook | Critério de Passagem |
+| :--- | :--- | :--- | :--- | :--- |
+| **Gate 1 (Mergeable)** | GitHub Sentinel | `pull_request.opened` / `synchronize` | Se `mergeable === false`, bloqueia o card (`kind: conflict`) e alerta o dev para rebase. | Sem conflitos com a branch base. |
+| **Gate 2 (CI/Checks)** | GitHub CI Sentinel | `check_suite.completed` | Se `failure`, bloqueia o card (`kind: capability`). Se `success`, aciona o `@qa-engineer`. | 100% verde no GitHub Actions. |
+| **Gate 3 (Code Review)** | `@reviewer` | `pull_request_review.submitted` | Se `changes_requested`, retorna para o dev. Se `approved`, convoca o `@product-manager`. | Aprovação formal da engenharia (`gh pr review --approve`). |
+| **Gate 4 (QA Homologation)**| `@qa-engineer` | `issue_comment` (no PR) | QA homologa cenários em staging, podendo comitar testes adicionais na branch. | Comentário formal `[QA-APROVADO]` no PR. |
+| **Gate 5 (PM Acceptance)** | `@product-manager` | `issue_comment` (no PR) | PM valida critérios de aceite do card e negócio, emitindo o sign-off final. | Comentário formal `[APROVADO]` do PM. |
+
+### Fusão Segura
+Somente após a validação simultânea dos 5 portões, o hook autoriza e executa a fusão atômica via `gh pr merge --squash --delete-branch`.

@@ -14,6 +14,7 @@
 import { db, chatRooms } from '@/db';
 import { eq, and } from 'drizzle-orm';
 import { appendRoomMessage } from '@/lib/chat-rooms';
+import type { RoomMessage } from '@/lib/chat-rooms-policy';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -152,9 +153,9 @@ export function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean
         prepare: (query: string) => {
           const stmt = dbInstance.prepare(query);
           return {
-            get: (...args: any[]) => stmt.get(...args),
-            all: (...args: any[]) => stmt.all(...args),
-            run: (...args: any[]) => stmt.run(...args),
+            get: (...args: unknown[]) => stmt.get(...args),
+            all: (...args: unknown[]) => stmt.all(...args),
+            run: (...args: unknown[]) => stmt.run(...args),
           };
         },
         exec: (query: string) => dbInstance.exec(query),
@@ -523,7 +524,7 @@ export async function executePostCompletionLifecycle(args: {
   taskId: string;
   cardTitle: string;
   assignee: string | null;
-  emitRoomMessage?: (roomId: string, message: any) => void;
+  emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
 }): Promise<void> {
   const { channelId, boardSlug, taskId, cardTitle, assignee, emitRoomMessage } = args;
 
@@ -581,7 +582,7 @@ export async function executeReviewGateHandoff(args: {
   taskId: string;
   cardTitle: string;
   assignee: string | null;
-  emitRoomMessage?: (roomId: string, message: any) => void;
+  emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
 }): Promise<void> {
   const { channelId, boardSlug, taskId, cardTitle, assignee, emitRoomMessage } = args;
   const tacticalRoom = await resolveTacticalRoomId(channelId, assignee ?? 'reviewer');
@@ -692,11 +693,11 @@ export function checkBoardStarvation(boardSlug: string): { starved: boolean; act
 export async function checkAndTriggerStarvation(args: {
   channelId: string;
   boardSlug: string;
-  emitRoomMessage?: (roomId: string, message: any) => void;
+  emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
 }): Promise<boolean> {
   const { channelId, boardSlug, emitRoomMessage } = args;
 
-  if (!PRODUCT_BOARDS.includes(boardSlug as any)) return false;
+  if (!PRODUCT_BOARDS.includes(boardSlug as (typeof PRODUCT_BOARDS)[number])) return false;
 
   const { starved, activeCount } = checkBoardStarvation(boardSlug);
   if (!starved) return false;
@@ -1009,7 +1010,7 @@ export function insertTaskSafely(
       projectId: spec.projectId,
     });
 
-    const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as any[]).map((c) => c.name);
+    const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((c) => c.name);
     const hasWsPath = columns.includes('workspace_path');
     const hasProjId = columns.includes('project_id');
 
@@ -1056,7 +1057,7 @@ export function insertTaskSafely(
       `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee}, workspace: ${resolvedWs.workspaceKind} @ ${resolvedWs.workspacePath})`
     );
     return { success: true, taskId };
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (transactionOpen && sqlite) {
       try {
         sqlite.exec('ROLLBACK');
@@ -1065,8 +1066,15 @@ export function insertTaskSafely(
       }
     }
     console.warn(`[autonomous-hooks] Failed to insert task on ${boardSlug}:`, err);
-    return { success: false, reason: err?.message ?? String(err) };
+    return { success: false, reason: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export interface ActiveSessionEntry {
+  lease_id?: string;
+  pid?: number | string;
+  session_id?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -1095,9 +1103,9 @@ export function cleanOrphanSessionLeases(hermesHome?: string): number {
     if (!fs.existsSync(activePath)) continue;
     try {
       const raw = fs.readFileSync(activePath, 'utf8');
-      const data = JSON.parse(raw);
+      const data = JSON.parse(raw) as { entries?: ActiveSessionEntry[] };
       if (!Array.isArray(data.entries) || data.entries.length === 0) continue;
-      const alive: any[] = [];
+      const alive: ActiveSessionEntry[] = [];
       let profileCleaned = 0;
       for (const entry of data.entries) {
         const pid = Number(entry.pid);
@@ -1132,6 +1140,20 @@ export interface BlockerTriageResult {
   details?: string;
 }
 
+export interface BlockerTaskRow {
+  id: string;
+  title: string;
+  body: string | null;
+  assignee: string | null;
+  status: string;
+  priority: number;
+  block_kind: string | null;
+  last_failure_error: string | null;
+  workspace_kind: 'scratch' | 'worktree' | 'dir';
+  workspace_path: string | null;
+  project_id: string | null;
+}
+
 /**
  * HK-08: BlockerTriageHook — Active Automated Triage of Blocked Cards
  *
@@ -1147,7 +1169,7 @@ export async function executeBlockerTriageLifecycle(args: {
   taskId: string;
   cardTitle: string;
   assignee: string | null;
-  emitRoomMessage?: (roomId: string, message: any) => void;
+  emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
   databasePath?: string;
   bypassDispatchSpawn?: boolean;
 }): Promise<BlockerTriageResult> {
@@ -1160,15 +1182,15 @@ export async function executeBlockerTriageLifecycle(args: {
   let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
   try {
     sqlite = getSqliteDatabase(dbPath);
-  } catch (err: any) {
-    return { action: 'none', details: `db_open_failed: ${String(err?.message ?? err)}` };
+  } catch (err: unknown) {
+    return { action: 'none', details: `db_open_failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 
   const taskRow = sqlite
     .prepare(
       'SELECT id, title, body, assignee, status, priority, block_kind, last_failure_error, workspace_kind, workspace_path, project_id FROM tasks WHERE id = ?'
     )
-    .get(taskId) as any;
+    .get(taskId) as BlockerTaskRow | undefined;
 
   if (!taskRow) {
     return { action: 'none', details: 'task_not_found' };
@@ -1178,12 +1200,12 @@ export async function executeBlockerTriageLifecycle(args: {
     .prepare(
       "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'blocked' ORDER BY created_at DESC LIMIT 1"
     )
-    .get(taskId) as any;
+    .get(taskId) as { payload?: string } | undefined;
 
-  let eventPayload: Record<string, any> = {};
+  let eventPayload: Record<string, unknown> = {};
   if (eventRow?.payload) {
     try {
-      eventPayload = JSON.parse(eventRow.payload);
+      eventPayload = JSON.parse(eventRow.payload) as Record<string, unknown>;
     } catch {}
   }
 
@@ -1199,17 +1221,16 @@ export async function executeBlockerTriageLifecycle(args: {
 
   // --- Branch A: Scratch workspace empty or missing git repo ---
   const isScratchIssue =
-    (blockKind === 'capability' || blockKind === '') &&
-    (taskRow.workspace_kind === 'scratch' ||
-      /workspace.*scratch.*(?:vazio|empty)|scratch.*vazio|não contém checkout|empty workspace|not inside a git repo|workspace scratch está vazio/i.test(
-        blockReason
-      ));
+    taskRow.workspace_kind === 'scratch' ||
+    /workspace.*scratch.*(?:vazio|empty)|scratch.*vazio|sem checkout|nenhum checkout|não contém checkout|empty workspace|not inside a git repo|workspace scratch está vazio|workspace está vazio/i.test(
+      blockReason
+    );
 
   if (isScratchIssue) {
     const resolved = resolveWorkspaceForTask(boardSlug, {
       title: taskRow.title,
-      body: taskRow.body,
-      assignee: taskRow.assignee,
+      body: taskRow.body ?? undefined,
+      assignee: taskRow.assignee ?? undefined,
     });
 
     if (resolved.workspacePath && resolved.workspaceKind !== 'scratch') {
@@ -1298,7 +1319,7 @@ export async function executeBlockerTriageLifecycle(args: {
 
   // --- Branch B: Broken environment / missing dependencies (.venv, missing libs, crypto, daphne, etc.) ---
   const isEnvIssue =
-    /import(?:error)?:\s*no module named|modulenotfounderror|crypto|daphne|django_extensions|poetry.*not found|broken environment|missing dependency/i.test(
+    /import(?:error)?:\s*no module named|modulenotfounderror|crypto|daphne|django_extensions|poetry.*not found|broken environment|missing dependency|depend[êe]ncia.*ausente/i.test(
       blockReason
     );
 

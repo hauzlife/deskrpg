@@ -5,7 +5,6 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   parseArtifactPyramidSlices,
-  checkBoardWipLimit,
   insertTaskSafely,
   getSqliteDatabase,
   checkBoardStarvation,
@@ -14,6 +13,20 @@ import {
   cleanOrphanSessionLeases,
   executeBlockerTriageLifecycle,
 } from './autonomous-lifecycle-hooks';
+
+interface TestTaskRow {
+  id?: string;
+  title?: string;
+  body?: string;
+  assignee?: string;
+  status?: string;
+  priority?: number;
+  workspace_kind?: string;
+  workspace_path?: string;
+  project_id?: string;
+  block_kind?: string | null;
+  last_failure_error?: string | null;
+}
 
 test('parseArtifactPyramidSlices extracts cards and routes to correct boards', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pyramid-test-'));
@@ -83,10 +96,10 @@ title: "02 Analysis: Bloopu"
 
 test('checkBoardStarvation identifies empty and starved boards accurately', () => {
   // Check that product boards list contains the 4 core products
-  assert.ok(PRODUCT_BOARDS.includes('mystelia' as any));
-  assert.ok(PRODUCT_BOARDS.includes('hot-telegram' as any));
-  assert.ok(PRODUCT_BOARDS.includes('bloopu' as any));
-  assert.ok(PRODUCT_BOARDS.includes('social' as any));
+  assert.ok(PRODUCT_BOARDS.includes('mystelia'));
+  assert.ok(PRODUCT_BOARDS.includes('hot-telegram'));
+  assert.ok(PRODUCT_BOARDS.includes('bloopu'));
+  assert.ok(PRODUCT_BOARDS.includes('social'));
 
   // Non-existent board does not fail
   const nonExistent = checkBoardStarvation('unknown-board-xyz-999');
@@ -195,7 +208,7 @@ test('insertTaskSafely populates workspace and project metadata and bypasses WIP
   assert.equal(res.success, true);
   assert.ok(res.taskId);
 
-  const row = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(res.taskId) as any;
+  const row = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(res.taskId) as TestTaskRow;
   assert.equal(row.workspace_kind, 'worktree');
   assert.equal(row.workspace_path, '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic');
   assert.equal(row.project_id, 'p_8c9879cd');
@@ -341,7 +354,7 @@ test('executeBlockerTriageLifecycle auto-heals empty scratch workspace to worktr
   assert.equal(result.action, 'workspace_remediated');
   assert.equal(result.remediatedTaskId, taskId);
 
-  const updatedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  const updatedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as TestTaskRow;
   assert.equal(updatedTask.status, 'ready');
   assert.equal(updatedTask.workspace_kind, 'worktree');
   assert.equal(updatedTask.workspace_path, '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic');
@@ -425,15 +438,15 @@ test('executeBlockerTriageLifecycle dispatches P0 env-fix task for ImportError /
   assert.ok(result.spawnedTaskId);
 
   // Original task moved to todo gated by dependency
-  const originalTask = sqlite.prepare('SELECT status, block_kind FROM tasks WHERE id = ?').get(taskId) as any;
+  const originalTask = sqlite.prepare('SELECT status, block_kind FROM tasks WHERE id = ?').get(taskId) as TestTaskRow;
   assert.equal(originalTask.status, 'todo');
   assert.equal(originalTask.block_kind, 'dependency');
 
   // Spawned task assigned to platform-engineer with priority 10
-  const spawnedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as any;
+  const spawnedTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as TestTaskRow;
   assert.equal(spawnedTask.assignee, 'platform-engineer');
   assert.equal(spawnedTask.priority, 10);
-  assert.match(spawnedTask.title, /\[P0-ENV-FIX\]/);
+  assert.match(spawnedTask.title ?? '', /\[P0-ENV-FIX\]/);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -511,10 +524,10 @@ test('executeBlockerTriageLifecycle dispatches P0 decision task for needs_input 
   assert.equal(result.remediatedTaskId, taskId);
   assert.ok(result.spawnedTaskId);
 
-  const decisionTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as any;
+  const decisionTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as TestTaskRow;
   assert.equal(decisionTask.assignee, 'product-manager');
   assert.equal(decisionTask.priority, 10);
-  assert.match(decisionTask.title, /\[P0-DECISÃO\]/);
+  assert.match(decisionTask.title ?? '', /\[P0-DECISÃO\]/);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

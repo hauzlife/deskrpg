@@ -41,6 +41,7 @@ import {
   checkAndTriggerStarvation,
   executeBlockerTriageLifecycle,
 } from "@/lib/autonomous-lifecycle-hooks";
+import { enforceReviewGateForPrTasks } from "@/lib/github-lifecycle-hooks";
 import {
   PLUGIN_EVENT_KINDS,
   type ApprovalBlockedEventPayload,
@@ -549,6 +550,22 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
     // HK-01, HK-02 & HK-07: Autonomous Lifecycle Hooks & Starvation Sentinel
     if (kind === "card_done" && event.task_id) {
       const currentBoard = event.board ?? deps.boardSlug;
+
+      // PR Review Gate Sentinel: If card is bound to an unmerged PR, enforce 'review' column!
+      const prGate = await enforceReviewGateForPrTasks({
+        boardSlug: currentBoard,
+        taskId: event.task_id,
+        channelId,
+        emitRoomMessage: deps.emitRoomMessage,
+      }).catch((err: unknown) => {
+        console.warn(`[automation-events] enforceReviewGateForPrTasks failed:`, err);
+        return { preventedDone: false };
+      });
+
+      if (prGate.preventedDone) {
+        return; // Retained strictly in 'review' column on Kanban board
+      }
+
       void executePostCompletionLifecycle({
         channelId,
         boardSlug: currentBoard,
@@ -578,7 +595,7 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
         cardTitle,
         assignee: p.assignee ?? null,
         emitRoomMessage: deps.emitRoomMessage,
-      }).catch((err: any) => {
+      }).catch((err: unknown) => {
         console.warn(`[automation-events] executeReviewGateHandoff failed:`, err);
       });
     }
@@ -618,7 +635,7 @@ async function postNotice(channelId: string, event: PluginEvent, deps: IngestDep
         cardTitle,
         assignee: p.assignee ?? null,
         emitRoomMessage: deps.emitRoomMessage,
-      }).catch((err: any) => {
+      }).catch((err: unknown) => {
         console.warn(`[automation-events] executeBlockerTriageLifecycle failed:`, err);
       });
     }

@@ -96,3 +96,4 @@ __pycache__/
 !/deploy/hostinger/
 !/deploy/office/
 deploy/hostinger/catalog-submission.md
+.worktrees/
