@@ -121,6 +121,26 @@ export interface SprintRetrospectiveResult {
 }
 
 /**
+ * Resolves the canonical DeskRPG database path with fallback
+ */
+export function resolveDeskRpgDbPath(overridePath?: string): string {
+  if (overridePath && fs.existsSync(overridePath)) return overridePath;
+  const canonicalPath = path.join(os.homedir(), '.deskrpg', 'data', 'deskrpg.db');
+  if (fs.existsSync(canonicalPath)) return canonicalPath;
+  const cwdDataPath = path.join(process.cwd(), 'data', 'deskrpg.db');
+  if (fs.existsSync(cwdDataPath)) return cwdDataPath;
+  return canonicalPath;
+}
+
+/**
+ * Resolves the canonical Kanban database path for a given board slug
+ */
+export function resolveKanbanDbPath(boardSlug: string, overridePath?: string): string {
+  if (overridePath && fs.existsSync(overridePath)) return overridePath;
+  return path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+}
+
+/**
  * Generate standard ISO week sprint tag, e.g. "sprint-40-2026"
  */
 export function generateSprintTag(date = new Date()): string {
@@ -184,13 +204,30 @@ export function getDefaultParticipantsForCeremony(ceremonyType: ScrumCeremonyTyp
 export function generateCeremonyTranscript(
   ceremonyType: ScrumCeremonyType,
   participants: CeremonyParticipant[],
-  context: { sprintTag: string; boardSlug: string; sprintGoal?: string }
+  context: { sprintTag: string; boardSlug: string; sprintGoal?: string; kanbanDbPath?: string }
 ): { transcript: string; totalTurns: number; durationSeconds: number } {
   const { sprintTag, boardSlug, sprintGoal = 'Atingir marco de receita e estabilidade' } = context;
   const turns: string[] = [];
 
+  const dbPath = resolveKanbanDbPath(boardSlug, context.kanbanDbPath);
+  let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
+  if (fs.existsSync(dbPath)) {
+    try {
+      sqlite = getSqliteDatabase(dbPath, { readonly: true });
+    } catch {}
+  }
+
   switch (ceremonyType) {
     case 'sprint_planning': {
+      let candidateTasks: Array<{ id: string; title: string }> = [];
+      if (sqlite) {
+        try {
+          candidateTasks = sqlite
+            .prepare("SELECT id, title FROM tasks WHERE status IN ('ready', 'todo') ORDER BY priority DESC LIMIT 5")
+            .all() as any[];
+        } catch {}
+      }
+
       turns.push(
         `[product-manager]: Bom dia, equipe. Iniciando o Sprint Planning para ${sprintTag.toUpperCase()} no projeto ${boardSlug}. Nosso Sprint Goal inegociável é: "${sprintGoal}". Precisamos fatiar épicos em tarefas atômicas de <4h com testes obrigatórios.`
       );
@@ -200,9 +237,16 @@ export function generateCeremonyTranscript(
       turns.push(
         `[technical-architect]: Analisei a topologia do repositório. As interfaces de DTO e contratos de banco suportam essa entrega. Exijo que qualquer card dependente passe pelos 5 Portões de Fusão antes do merge.`
       );
-      turns.push(
-        `[implementation-planner]: Já estou decompondo as metas em 3 cards atômicos com arquivos afetados e suítes de teste vinculadas. O Sprint Backlog está selado e pronto para abastecer a esteira.`
-      );
+      if (candidateTasks.length > 0) {
+        const listStr = candidateTasks.map((t) => `${t.id} ("${t.title}")`).join(', ');
+        turns.push(
+          `[implementation-planner]: Backlog ativo mapeado. Principais tarefas candidatas: ${listStr}. Já estou vinculando critérios de aceite e workspaces isolados para a esteira.`
+        );
+      } else {
+        turns.push(
+          `[implementation-planner]: Já estou decompondo as metas em 3 cards atômicos com arquivos afetados e suítes de teste vinculadas. O Sprint Backlog está selado e pronto para abastecer a esteira.`
+        );
+      }
       turns.push(
         `[product-manager]: Perfeito. Metas travadas e backlog selado no Kanban. Nenhum novo card entra nesta sprint a menos que seja um P0 de produção aprovado pelo SRE.`
       );
@@ -210,41 +254,118 @@ export function generateCeremonyTranscript(
     }
     case 'daily_standup': {
       turns.push(
-        `[chief-of-staff]: Iniciando Daily Standup assíncrono de ${boardSlug}. Regra estrita: 3 linhas por especialista. Status de ontem, foco de hoje e bloqueios.`
+        `[chief-of-staff]: Iniciando Daily Standup assíncrono de ${boardSlug} (${sprintTag.toUpperCase()}). Regra estrita: 3 linhas por especialista. Status de ontem, foco de hoje e bloqueios ativos.`
       );
+
+      let doneTasks: Array<{ id: string; title: string; assignee: string }> = [];
+      let runningTasks: Array<{ id: string; title: string; assignee: string }> = [];
+      let readyTasks: Array<{ id: string; title: string; assignee: string }> = [];
+      let blockedTasks: Array<{ id: string; title: string; assignee: string; block_kind: string | null }> = [];
+
+      if (sqlite) {
+        try {
+          doneTasks = sqlite.prepare("SELECT id, title, assignee FROM tasks WHERE status = 'done' ORDER BY completed_at DESC LIMIT 5").all() as any[];
+          runningTasks = sqlite.prepare("SELECT id, title, assignee FROM tasks WHERE status = 'running' LIMIT 5").all() as any[];
+          readyTasks = sqlite.prepare("SELECT id, title, assignee FROM tasks WHERE status = 'ready' ORDER BY priority DESC LIMIT 5").all() as any[];
+          blockedTasks = sqlite.prepare("SELECT id, title, assignee, block_kind FROM tasks WHERE status = 'blocked' LIMIT 5").all() as any[];
+        } catch {}
+      }
+
+      const beDone = doneTasks.find((t) => t.assignee?.includes('backend') || t.assignee?.includes('dev'));
+      const beRunning = runningTasks.find((t) => t.assignee?.includes('backend') || t.assignee?.includes('dev'));
+      const beReady = readyTasks.find((t) => t.assignee?.includes('backend') || t.assignee?.includes('dev')) || readyTasks[0];
+      const beBlocked = blockedTasks.find((t) => t.assignee?.includes('backend') || t.assignee?.includes('dev'));
+
       turns.push(
-        `[backend-engineer]: Ontem: Finalizei a refatoração do webhook e abri o PR #42. Hoje: Pegando o card de reconciliação de ledger da coluna ready. Bloqueios: Nenhum.`
+        `[backend-engineer]: Ontem: ${beDone ? `Finalizei ${beDone.id} ("${beDone.title}") e abri o PR.` : 'Finalizei a refatoração do webhook e atuei na estabilização dos serviços.'}\n` +
+        `Hoje: ${beRunning ? `Executando ${beRunning.id} ("${beRunning.title}").` : beReady ? `Pegando o card ${beReady.id} ("${beReady.title}") da coluna ready.` : 'Pegando o card de reconciliação de ledger da coluna ready.'}\n` +
+        `Bloqueios: ${beBlocked ? `Atenção ao card ${beBlocked.id} bloqueado (${beBlocked.block_kind || 'capability'}). HK-08 acionado.` : 'Nenhum.'}`
       );
+
+      const qaDone = doneTasks.find((t) => t.assignee?.includes('qa') || t.assignee?.includes('test'));
+      const qaRunning = runningTasks.find((t) => t.assignee?.includes('qa') || t.assignee?.includes('test'));
+      const qaReady = readyTasks.find((t) => t.assignee?.includes('qa') || t.assignee?.includes('test')) || readyTasks[1];
+
       turns.push(
-        `[qa-engineer]: Ontem: Homologuei os 10 cenários de teste do checkout de PIX. Hoje: Automatizando testes de carga no endpoint de pagamento. Bloqueios: Nenhum.`
+        `[qa-engineer]: Ontem: ${qaDone ? `Homologuei os cenários de teste da tarefa ${qaDone.id}.` : 'Homologuei os 10 cenários de teste do checkout de PIX.'}\n` +
+        `Hoje: ${qaRunning ? `Executando testes no card ${qaRunning.id}.` : qaReady ? `Automatizando testes para ${qaReady.id} ("${qaReady.title}").` : 'Automatizando testes de carga no endpoint de pagamento.'}\n` +
+        `Bloqueios: Nenhum.`
       );
+
+      const sreBlocked = blockedTasks.length > 0;
       turns.push(
-        `[site-reliability-engineer]: Ontem: Monitorei os pods de produção, zero erros 500 nas últimas 24h. Hoje: Otimizando latência de queries de banco. Bloqueios: Nenhum.`
+        `[site-reliability-engineer]: Ontem: Monitorei os pods de produção, zero erros 500 nas últimas 24h.\n` +
+        `Hoje: Otimizando latência de queries de banco e verificando webhooks.\n` +
+        `Bloqueios: ${sreBlocked ? `Detectados ${blockedTasks.length} cards em blocked. HK-08 acionado para triagem automática.` : 'Nenhum.'}`
       );
+
       turns.push(
-        `[chief-of-staff]: Sem bloqueios reportados. A esteira segue fluindo normalmente com limites de WIP respeitados.`
+        `[chief-of-staff]: Alinhamento diário concluído. Métricas do board: ${doneTasks.length} entregas recentes, ${runningTasks.length} em execução, ${readyTasks.length} prontas e ${blockedTasks.length} bloqueadas. A esteira segue fluindo normalmente com limites de WIP respeitados.`
       );
       break;
     }
     case 'mid_sprint_check': {
+      let doneCount = 0;
+      let reviewCount = 4;
+      let runningCount = 2;
+      let blockedCount = 0;
+      let totalTasks = 8;
+      let completionRate = 75;
+
+      if (sqlite) {
+        try {
+          const tasks = sqlite.prepare("SELECT status FROM tasks WHERE status != 'archived'").all() as any[];
+          if (tasks.length > 0) {
+            totalTasks = tasks.length;
+            doneCount = tasks.filter((t) => t.status === 'done').length;
+            reviewCount = tasks.filter((t) => t.status === 'review').length;
+            runningCount = tasks.filter((t) => t.status === 'running').length;
+            blockedCount = tasks.filter((t) => t.status === 'blocked').length;
+            completionRate = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 75;
+          }
+        } catch {}
+      }
+
       turns.push(
-        `[kanban-strategist]: Iniciando Mid-Sprint Check de ${sprintTag}. Nossa velocidade de vazão está em 75% da meta. Temos 4 cards em review e 2 em execução.`
+        `[kanban-strategist]: Iniciando Mid-Sprint Check de ${sprintTag} no projeto ${boardSlug}. Nossa velocidade de vazão está em ${completionRate}% da meta (${doneCount} concluídas de ${totalTasks} totais). Temos ${reviewCount} cards em review, ${runningCount} em execução e ${blockedCount} bloqueadas.`
       );
-      turns.push(
-        `[product-manager]: Excelente. Como a vazão está saudável, não precisaremos acionar o corte preventivo de escopo. Todos os cards comprometidos devem convergir para aprovação do Reviewer e QA até quinta à tarde.`
-      );
+
+      if (blockedCount > 1 || completionRate < 40) {
+        turns.push(
+          `[product-manager]: Velocidade abaixo da curva ideal e ${blockedCount} bloqueios ativos. Acionando HK-08 para triagem de impedimentos e aplicando corte preventivo em cards secundários para proteger o núcleo do Sprint Goal.`
+        );
+      } else {
+        turns.push(
+          `[product-manager]: Excelente. Como a vazão está saudável, não precisaremos acionar o corte preventivo de escopo. Todos os cards comprometidos devem convergir para aprovação do Reviewer e QA até quinta à tarde.`
+        );
+      }
+
       turns.push(
         `[implementation-planner]: Confirmo que os devs estão focados exclusivamente no Sprint Goal. Burndown projetado para 100% de conclusão na sexta-feira.`
       );
       break;
     }
     case 'sprint_review': {
+      let completedTasks: Array<{ id: string; title: string }> = [];
+      if (sqlite) {
+        try {
+          completedTasks = sqlite.prepare("SELECT id, title FROM tasks WHERE status = 'done' ORDER BY completed_at DESC LIMIT 5").all() as any[];
+        } catch {}
+      }
+
       turns.push(
         `[product-manager]: Bem-vindo à mesa de reunião, Artur Modesto. Iniciando a Demonstração Executiva da ${sprintTag.toUpperCase()} para o projeto ${boardSlug}.`
       );
-      turns.push(
-        `[product-manager]: Apresento o Incremento de Produto: todos os cards do Sprint Goal foram entregues, cumpriram a Definição de Pronto (DoD) e passaram pelos 5 Portões de Fusão do GitHub.`
-      );
+      if (completedTasks.length > 0) {
+        const taskNames = completedTasks.map((t) => `• ${t.id}: "${t.title}"`).join('\n');
+        turns.push(
+          `[product-manager]: Apresento o Incremento de Produto: todos os cards do Sprint Goal foram entregues, cumpriram a Definição de Pronto (DoD) e passaram pelos 5 Portões de Fusão do GitHub:\n${taskNames}`
+        );
+      } else {
+        turns.push(
+          `[product-manager]: Apresento o Incremento de Produto: todos os cards do Sprint Goal foram entregues, cumpriram a Definição de Pronto (DoD) e passaram pelos 5 Portões de Fusão do GitHub.`
+        );
+      }
       turns.push(
         `[qa-engineer]: Homologação 100% concluída. Validamos todos os cenários de teste com dados reais de staging e zero regressão encontrada.`
       );
@@ -252,16 +373,26 @@ export function generateCeremonyTranscript(
         `[verifier]: Os PRs foram mesclados via squash na branch principal e o deploy em produção já está ativo e monitorado.`
       );
       turns.push(
-        `[Artur Modesto]: Excelente trabalho da equipe. Incremento homologado e aprovado para operação.`
+        `[product-manager]: Incremento concluído e pacote formalmente apresentado para homologação e auditoria do Soberano Artur Modesto.`
       );
       break;
     }
     case 'sprint_retrospective': {
+      let autoRemediated = 0;
+      let ciFailures = 0;
+      if (sqlite) {
+        try {
+          const comments = sqlite.prepare("SELECT body FROM task_comments").all() as any[];
+          autoRemediated = comments.filter((c: any) => c.body.includes('[BlockerTriageHook]') || c.body.includes('auto-remediação')).length;
+          ciFailures = comments.filter((c: any) => c.body.includes('[GATE 2 — CI FALHOU]')).length;
+        } catch {}
+      }
+
       turns.push(
         `[curator]: Iniciando a Retrospectiva da ${sprintTag}. Vamos documentar o After Action Review (AAR): o que funcionou, o que quebrou e o que deve ser institucionalizado no vault.`
       );
       turns.push(
-        `[site-reliability-engineer]: Ponto positivo: os hooks HK-08 auto-remediaram os workspaces sem parar a esteira. Ponto a melhorar: precisamos de rebase mais frequente para evitar conflitos de branch.`
+        `[site-reliability-engineer]: Ponto positivo: os hooks HK-08 auto-remediaram ${autoRemediated > 0 ? autoRemediated : 'os'} workspaces sem parar a esteira. Ponto a melhorar: precisamos de rebase mais frequente para evitar conflitos de branch.`
       );
       turns.push(
         `[debugger]: As análises de causa raiz (RCA) foram feitas no ato da quebra do CI, poupando tempo de investigação do time.`
@@ -431,6 +562,7 @@ export async function createScrumCeremonyMeeting(
     sprintTag,
     boardSlug,
     sprintGoal,
+    kanbanDbPath,
   });
 
   const { keyTopics, conclusions, outcome } = generateCeremonyOutcome(ceremonyType, {
@@ -452,11 +584,7 @@ export async function createScrumCeremonyMeeting(
             : `🧠 [Scrum: Sprint Retrospective — ${sprintTag.toUpperCase()} — ${boardSlug}]`;
 
   // Persist into DeskRPG database (meeting_minutes table)
-  const deskDb =
-    deskrpgDbPath ??
-    (fs.existsSync(path.join(process.cwd(), 'data', 'deskrpg.db'))
-      ? path.join(process.cwd(), 'data', 'deskrpg.db')
-      : path.join(os.homedir(), '.hermes', 'deskrpg.db'));
+  const deskDb = resolveDeskRpgDbPath(deskrpgDbPath);
 
   if (fs.existsSync(deskDb)) {
     try {
@@ -487,6 +615,63 @@ export async function createScrumCeremonyMeeting(
     } catch (err) {
       console.warn(`[scrum-lifecycle] Failed to persist meeting_minutes in ${deskDb}:`, err);
     }
+  }
+
+  // Persist rich markdown artifact on disk for human reading / pyramid access
+  let artifactPath: string | null = null;
+  try {
+    const meetingsDir = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'meetings');
+    if (!fs.existsSync(meetingsDir)) {
+      fs.mkdirSync(meetingsDir, { recursive: true });
+    }
+    artifactPath = path.join(meetingsDir, `${meetingId}.md`);
+    const artifactContent = [
+      `# 🏛️ Ata de Reunião: ${topic}`,
+      ``,
+      `| Metadado | Valor |`,
+      `|---|---|`,
+      `| **Meeting ID** | \`${meetingId}\` |`,
+      `| **Cerimônia** | \`${ceremonyType}\` |`,
+      `| **Sprint Tag** | \`${sprintTag}\` |`,
+      `| **Projeto / Board** | \`${boardSlug}\` |`,
+      `| **Data** | ${nowIso} |`,
+      `| **Duração / Turnos** | ${totalTurns} turnos (~${Math.round(durationSeconds / 60)} min) |`,
+      ``,
+      `## 👥 Participantes na Mesa`,
+      participants.map((p) => `- **${p.name}** (${p.role || p.type})`).join('\n'),
+      ``,
+      `## 🎯 Tópicos-Chave & Conclusões`,
+      `### Tópicos Discutidos:`,
+      keyTopics.map((t) => `- ${t}`).join('\n'),
+      ``,
+      `### Conclusões do Colegiado:`,
+      conclusions,
+      ``,
+      `## 📋 Decisões & Encaminhamentos Registrados`,
+      `### Decisões:`,
+      outcome.decisions.map((d) => `1. ${d}`).join('\n'),
+      ``,
+      `### Tarefas de Acompanhamento (Auto-Registradas no Kanban):`,
+      outcome.followUps.length > 0
+        ? outcome.followUps
+            .map(
+              (f, idx) =>
+                `#### ${idx + 1}. ${f.title}\n- **Atribuído a:** \`@${f.assigneeName || 'backend-engineer'}\`\n- **Resumo:** ${f.summary}\n- **Critérios de Aceite:**\n${f.acceptance || 'N/A'}`
+            )
+            .join('\n\n')
+        : `*(Nenhuma tarefa pendente de criação).*`,
+      ``,
+      `---`,
+      ``,
+      `## 💬 Transcrição Integral do Debate`,
+      `\`\`\``,
+      transcript,
+      `\`\`\``,
+    ].join('\n');
+
+    fs.writeFileSync(artifactPath, artifactContent, 'utf8');
+  } catch (err) {
+    console.warn(`[scrum-lifecycle] Failed to write meeting artifact:`, err);
   }
 
   // Also bind to Kanban board and auto-register cards if it is Sprint Planning or has followUps
@@ -522,6 +707,7 @@ export async function createScrumCeremonyMeeting(
       `👥 **Participantes na Mesa:** ${participants.map((p) => p.name).join(', ')}\n` +
       `💬 **Turnos Discutidos:** ${totalTurns} turnos (${Math.round(durationSeconds / 60)} min de debate)\n` +
       `📝 **Ata e Conclusão:** ${conclusions}\n` +
+      (artifactPath ? `📄 **Ata Completa em Markdown:** \`${artifactPath}\`\n` : '') +
       `🔗 *Acesse a ata completa e a transcrição na aba de Reuniões do DeskRPG.*`;
 
     try {
@@ -865,11 +1051,7 @@ export async function autonomousRegisterMeetingOutcome(args: {
     emitRoomMessage,
   } = args;
 
-  const deskDb =
-    deskrpgDbPath ??
-    (fs.existsSync(path.join(process.cwd(), 'data', 'deskrpg.db'))
-      ? path.join(process.cwd(), 'data', 'deskrpg.db')
-      : path.join(os.homedir(), '.hermes', 'deskrpg.db'));
+  const deskDb = resolveDeskRpgDbPath(deskrpgDbPath);
 
   if (!fs.existsSync(deskDb)) {
     return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: 'unknown', details: 'deskrpg_db_not_found' };
@@ -904,8 +1086,7 @@ export async function autonomousRegisterMeetingOutcome(args: {
   }
 
   const resolvedBoardSlug = args.boardSlug || outcome.project?.name || 'hot-telegram';
-  const targetKanbanDb =
-    kanbanDbPath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', resolvedBoardSlug, 'kanban.db');
+  const targetKanbanDb = resolveKanbanDbPath(resolvedBoardSlug, kanbanDbPath);
 
   if (!fs.existsSync(targetKanbanDb)) {
     return { success: false, registeredTasksCount: 0, taskIds: [], boardSlug: resolvedBoardSlug, details: 'kanban_db_not_found' };
