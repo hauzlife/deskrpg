@@ -15,16 +15,21 @@ Um sistema puramente em Kanban puxa tarefas do topo do backlog sem prazo limite.
 
 ---
 
-## 2. A Solução Scrumban: Fluxo Contínuo Dentro da Timebox
+## 2. A Solução Scrumban: Todas as Cerimônias como Reuniões Nativas do DeskRPG
 
-O **Scrum Lifecycle** atua como a moldura estratégica que governa o motor do Kanban:
+O **Scrum Lifecycle** atua como a moldura estratégica que governa o motor do Kanban. **Toda e qualquer cerimônia é instanciada através da feature oficial de reuniões (`meeting_minutes`) do DeskRPG**:
+- **Elementos Visuais e Espaciais:** Os avatares 3D dos especialistas se deslocam pelo escritório virtual e sentam fisicamente ao redor da mesa de reunião (`Boardroom`, `Dev Lab`, `Product Office`).
+- **Transcrição e Diálogo Completo:** Cada turno de fala é gravado na íntegra com os argumentos, discordâncias construtivas e convergências dos especialistas.
+- **Relatório e Ata Visual:** Registro formal com tópicos-chave, decisões e a ata visual exportável em Markdown.
+- **Auto-Registro de Tarefas (`registerBatch`):** Os itens de ação acordados na reunião viram cards no Kanban automaticamente.
 
 ```
 Segunda-feira (09:00) ──────► Terça a Sexta (08:30) ──────► Quarta-feira (14:00) ──────► Sexta-feira (16:30) ──────► Sexta-feira (17:30)
  ┌─────────────────┐           ┌──────────────────┐           ┌─────────────────┐           ┌─────────────────┐           ┌─────────────────┐
  │ SPRINT PLANNING │           │  ASYNC STANDUP   │           │ MID-SPRINT CHECK│           │  SPRINT REVIEW  │           │  RETROSPECTIVE  │
- │ • Sprint Goal   │           │ • 3 Linhas/agente│           │ • Burndown rate │           │ • Demo executiva│           │ • Lições no AAR │
- │ • Escopo selado │           │ • HK-08 Blocker  │           │ • Corte escopo  │           │ • 5 Gates OK    │           │ • Atualiza Vault│
+ │ • Reunião 3D    │           │ • Mesa redonda   │           │ • Burndown rate │           │ • Demo com Artur│           │ • Reunião na Bib│
+ │ • Sprint Goal   │           │ • 3 Linhas/agente│           │ • Corte escopo  │           │ • Incremento OK │           │ • AAR no Vault  │
+ │ • Auto-Cards    │           │ • HK-08 Blocker  │           │ • Ata gravada   │           │ • 5 Gates OK    │           │ • Ata gravada   │
  └─────────────────┘           └──────────────────┘           └─────────────────┘           └─────────────────┘           └─────────────────┘
 ```
 

@@ -181,6 +181,21 @@ export async function POST(req: NextRequest) {
     for (const alert of payload.alerts) {
       const labels = alert.labels || {};
       const annotations = alert.annotations || {};
+      const alertName = (labels.alertname || "").trim();
+      const rawSeverity = (labels.severity || "").toLowerCase().trim();
+
+      // Sentinel alerts (Watchdog / DeadMansSwitch) continuously fire by design to verify
+      // alerting pipeline health and must never create incident cards.
+      if (
+        alertName === "Watchdog" ||
+        alertName === "DeadMansSwitch" ||
+        alertName === "KubeWatchdog" ||
+        rawSeverity === "none" ||
+        rawSeverity === "info"
+      ) {
+        continue;
+      }
+
       const fingerprint = buildAlertFingerprint(alert);
       const dedupKey = fingerprintMarker(fingerprint);
       const boardSlug = resolveBoardSlug(labels);

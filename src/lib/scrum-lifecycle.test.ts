@@ -10,14 +10,17 @@ import {
   auditSprintBurndown,
   generateSprintReviewSITREP,
   generateSprintRetrospective,
+  createScrumCeremonyMeeting,
+  getDefaultParticipantsForCeremony,
 } from './scrum-lifecycle';
 
-function createMockKanbanDb(): { tmpDir: string; dbPath: string } {
+function createMockDbs(): { tmpDir: string; kanbanDbPath: string; deskrpgDbPath: string } {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scrum-lifecycle-test-'));
-  const dbPath = path.join(tmpDir, 'test.db');
-  const sqlite = getSqliteDatabase(dbPath);
+  const kanbanDbPath = path.join(tmpDir, 'kanban.db');
+  const deskrpgDbPath = path.join(tmpDir, 'deskrpg.db');
 
-  sqlite.exec(`
+  const sqliteKanban = getSqliteDatabase(kanbanDbPath);
+  sqliteKanban.exec(`
     CREATE TABLE tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -59,7 +62,26 @@ function createMockKanbanDb(): { tmpDir: string; dbPath: string } {
     );
   `);
 
-  return { tmpDir, dbPath };
+  const sqliteDesk = getSqliteDatabase(deskrpgDbPath);
+  sqliteDesk.exec(`
+    CREATE TABLE meeting_minutes (
+      id TEXT PRIMARY KEY NOT NULL,
+      channel_id TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      transcript TEXT NOT NULL,
+      participants TEXT NOT NULL DEFAULT '[]',
+      total_turns INTEGER NOT NULL DEFAULT 0,
+      duration_seconds INTEGER,
+      initiator_id TEXT,
+      key_topics TEXT NOT NULL DEFAULT '[]',
+      conclusions TEXT,
+      outcome_json TEXT,
+      summary_status TEXT NOT NULL DEFAULT 'ok',
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  return { tmpDir, kanbanDbPath, deskrpgDbPath };
 }
 
 test('generateSprintTag returns valid ISO sprint tag', () => {
@@ -67,9 +89,80 @@ test('generateSprintTag returns valid ISO sprint tag', () => {
   assert.match(tag, /^sprint-\d{2}-2026$/);
 });
 
+test('createScrumCeremonyMeeting instantiates authentic DeskRPG meeting with visual seating, transcript and outcome', async () => {
+  const { tmpDir, kanbanDbPath, deskrpgDbPath } = createMockDbs();
+
+  // Test Sprint Planning Meeting
+  const planResult = await createScrumCeremonyMeeting({
+    ceremonyType: 'sprint_planning',
+    boardSlug: 'hot-telegram',
+    channelId: 'c_general',
+    sprintTag: 'sprint-40-2026',
+    sprintGoal: 'Implementar checkout PIX v2 com 100% de reconciliação',
+    deskrpgDbPath,
+    kanbanDbPath,
+    plannedItems: [
+      {
+        title: 'Criar webhook de liquidação PIX',
+        acceptance: 'Idempotência garantida via Redis e ledger SQLite',
+        assigneeNpcId: 'npc_backend',
+        assigneeName: 'backend-engineer',
+      },
+      {
+        title: 'Homologação E2E de compra PIX',
+        acceptance: '10/10 compras teste liquidadas com sucesso',
+        assigneeNpcId: 'npc_qa',
+        assigneeName: 'qa-engineer',
+      },
+    ],
+  });
+
+  assert.equal(planResult.success, true);
+  assert.match(planResult.meetingId, /^m_/);
+  assert.equal(planResult.ceremonyType, 'sprint_planning');
+  assert.match(planResult.topic, /Sprint Planning/);
+  assert.ok(planResult.participants.length >= 4);
+  assert.ok(planResult.totalTurns >= 5);
+  assert.ok(planResult.transcript.includes('[product-manager]'));
+  assert.ok(planResult.transcript.includes('[cpo]'));
+  assert.equal(planResult.outcome.followUps.length, 2);
+  assert.equal(planResult.outcome.followUps[0].assigneeName, 'backend-engineer');
+  assert.equal(planResult.outcome.followUps[1].assigneeName, 'qa-engineer');
+
+  // Verify persistence in DeskRPG meeting_minutes table
+  const sqliteDesk = getSqliteDatabase(deskrpgDbPath);
+  const row = sqliteDesk
+    .prepare('SELECT * FROM meeting_minutes WHERE id = ?')
+    .get(planResult.meetingId) as any;
+
+  assert.ok(row);
+  assert.equal(row.topic, planResult.topic);
+  assert.ok(row.transcript.includes('Sprint Planning'));
+  const savedOutcome = JSON.parse(row.outcome_json || row.outcomeJson);
+  assert.equal(savedOutcome.decisions.length >= 2, true);
+  assert.equal(savedOutcome.followUps.length, 2);
+
+  // Test Sprint Review with Sovereign (Artur Modesto)
+  const reviewResult = await createScrumCeremonyMeeting({
+    ceremonyType: 'sprint_review',
+    boardSlug: 'hot-telegram',
+    channelId: 'c_general',
+    sprintTag: 'sprint-40-2026',
+    deskrpgDbPath,
+    kanbanDbPath,
+  });
+
+  assert.equal(reviewResult.success, true);
+  assert.ok(reviewResult.participants.some((p) => p.name === 'Artur Modesto' && p.type === 'player'));
+  assert.ok(reviewResult.transcript.includes('Artur Modesto'));
+  assert.ok(reviewResult.conclusions.includes('homologada pelo Soberano'));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
 test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlog', async () => {
-  const { tmpDir, dbPath } = createMockKanbanDb();
-  const sqlite = getSqliteDatabase(dbPath);
+  const { tmpDir, kanbanDbPath } = createMockDbs();
+  const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
 
   // Insert candidate tasks
@@ -88,7 +181,7 @@ test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlo
     boardSlug: 'hot-telegram',
     goal,
     sprintTag,
-    databasePath: dbPath,
+    databasePath: kanbanDbPath,
   });
 
   assert.equal(res.success, true);
@@ -103,8 +196,8 @@ test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlo
 });
 
 test('auditSprintBurndown calculates throughput and identifies risks', async () => {
-  const { tmpDir, dbPath } = createMockKanbanDb();
-  const sqlite = getSqliteDatabase(dbPath);
+  const { tmpDir, kanbanDbPath } = createMockDbs();
+  const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
   const sprintTag = 'sprint-40-2026';
 
@@ -122,7 +215,7 @@ test('auditSprintBurndown calculates throughput and identifies risks', async () 
   const burndown = await auditSprintBurndown({
     boardSlug: 'hot-telegram',
     sprintTag,
-    databasePath: dbPath,
+    databasePath: kanbanDbPath,
   });
 
   assert.equal(burndown.totalCommitted, 5);
@@ -136,8 +229,8 @@ test('auditSprintBurndown calculates throughput and identifies risks', async () 
 });
 
 test('generateSprintReviewSITREP compiles merged increments and DoD validation', async () => {
-  const { tmpDir, dbPath } = createMockKanbanDb();
-  const sqlite = getSqliteDatabase(dbPath);
+  const { tmpDir, kanbanDbPath } = createMockDbs();
+  const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
   const sprintTag = 'sprint-40-2026';
 
@@ -151,7 +244,7 @@ test('generateSprintReviewSITREP compiles merged increments and DoD validation',
   const sitrep = await generateSprintReviewSITREP({
     boardSlug: 'hot-telegram',
     sprintTag,
-    databasePath: dbPath,
+    databasePath: kanbanDbPath,
   });
 
   assert.equal(sitrep.totalCompleted, 2);
@@ -163,8 +256,8 @@ test('generateSprintReviewSITREP compiles merged increments and DoD validation',
 });
 
 test('generateSprintRetrospective extracts HK-08 auto-remediations and CI telemetry', async () => {
-  const { tmpDir, dbPath } = createMockKanbanDb();
-  const sqlite = getSqliteDatabase(dbPath);
+  const { tmpDir, kanbanDbPath } = createMockDbs();
+  const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
   const sprintTag = 'sprint-40-2026';
 
@@ -182,7 +275,7 @@ test('generateSprintRetrospective extracts HK-08 auto-remediations and CI teleme
   const retro = await generateSprintRetrospective({
     boardSlug: 'hot-telegram',
     sprintTag,
-    databasePath: dbPath,
+    databasePath: kanbanDbPath,
   });
 
   assert.equal(retro.totalBlockersEncountered, 3);

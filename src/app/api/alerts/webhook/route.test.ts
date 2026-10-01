@@ -47,6 +47,39 @@ describe("Alertmanager Webhook endpoint (/api/alerts/webhook)", () => {
     assert.equal(data.processed, 1);
   });
 
+  it("ignores Watchdog and sentinel alerts with severity none", async () => {
+    const payload = {
+      status: "firing",
+      alerts: [
+        {
+          status: "firing",
+          labels: {
+            alertname: "Watchdog",
+            component: "prometheus",
+            severity: "none",
+            tier: "platform",
+          },
+          annotations: {
+            summary: "Prometheus Watchdog / Deadman's Switch is active",
+            description: "Sentinel alert verifying alerting pipeline",
+          },
+          startsAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const req = new NextRequest("http://localhost:3000/api/alerts/webhook", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.equal(data.tasksCreated.length, 0);
+  });
+
   it("processes resolved alerts and closes matching open tasks", async () => {
     const payload = {
       status: "resolved",
