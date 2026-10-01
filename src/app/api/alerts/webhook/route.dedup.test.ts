@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { getSqliteDatabase, insertTaskSafely } from "@/lib/autonomous-lifecycle-hooks";
-import { buildAlertFingerprint } from "./route";
+import { buildAlertFingerprint } from "@/lib/alertmanager-webhook";
 
 function marker(fingerprint: string): string {
   return `<!-- alertmanager-fingerprint:${fingerprint} -->`;

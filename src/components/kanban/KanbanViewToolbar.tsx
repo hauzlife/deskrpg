@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, GanttChartSquare, LayoutGrid, List } from "lucide-react";
+import { Archive, CalendarDays, GanttChartSquare, LayoutGrid, List } from "lucide-react";
 
 import { useT } from "@/lib/i18n";
 import type { GroupBy, ProjectViewState, SortField } from "@/lib/kanban-view-state";
@@ -70,6 +70,13 @@ export default function KanbanViewToolbar({
             hint={t("kanban.view.timeline.hint")}
           />
         )}
+        <ModeButton
+          active={state.viewMode === "calendar"}
+          label={t("kanban.view.calendar") || "Calendário"}
+          onClick={() => onUpdate({ viewMode: "calendar" })}
+          icon={<CalendarDays className="h-3.5 w-3.5" />}
+          hint="Visão temporal em calendário das entregas e reuniões"
+        />
       </div>
 
       {state.viewMode === "list" && (

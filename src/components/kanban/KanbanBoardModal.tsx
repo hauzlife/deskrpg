@@ -21,6 +21,7 @@ import KanbanColumn from "./KanbanColumn";
 import KanbanListView from "./KanbanListView";
 import KanbanMetricsPanel from "./KanbanMetricsPanel";
 import KanbanTimeline from "./KanbanTimeline";
+import KanbanCalendarView from "./KanbanCalendarView";
 import KanbanViewToolbar from "./KanbanViewToolbar";
 import SwarmDialog, { type SwarmSubmit } from "./SwarmDialog";
 import TaskDrawer, { type TaskDrawerArtifacts } from "./TaskDrawer";
@@ -1090,6 +1091,14 @@ export default function KanbanBoardModal({
                 expanded={expandedTasks}
                 loadingChildren={loadingChildren}
                 onToggleExpand={toggleExpand}
+              />
+            ) : viewState.viewMode === "calendar" ? (
+              <KanbanCalendarView
+                boardSlug={selectedBoard ?? status?.boardSlug ?? ""}
+                channelId={channelId}
+                tasks={allTasks}
+                now={now}
+                onOpenTask={setSelectedTaskId}
               />
             ) : (
               <div className="flex h-full gap-3">
