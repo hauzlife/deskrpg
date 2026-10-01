@@ -847,7 +847,13 @@ function GatewayManagementPageInner() {
                   />
                 )}
 
-                <div className="grid gap-4">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleUpdate();
+                  }}
+                  className="grid gap-4"
+                >
                   <div>
                     <label className="mb-1 block text-sm font-semibold text-text-secondary">
                       {t("gateways.displayName")}
@@ -887,6 +893,7 @@ function GatewayManagementPageInner() {
                         disabled={!!selectedGateway && !selectedGateway.isOwner}
                         className="flex-1 rounded border border-border bg-bg px-3 py-2 text-text focus:outline-none focus:border-primary disabled:opacity-60"
                         placeholder={t("settings.gatewayTokenPlaceholder")}
+                        autoComplete="current-password"
                       />
                       <button
                         type="button"
@@ -902,7 +909,7 @@ function GatewayManagementPageInner() {
                       </p>
                     )}
                   </div>
-                </div>
+                </form>
 
                 {selectedGateway && testStates[selectedGateway.id] && (
                   <GatewayStatusCard

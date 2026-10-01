@@ -139,11 +139,24 @@ flowchart TD
 ### Hook 8 — `BlockerTriageHook` (Triagem Ativa de Bloqueio & Auto-Remediação)
 - **Local de Execução:** DeskRPG Event Sink (`automation-events.ts` -> `autonomous-lifecycle-hooks.ts`).
 - **Gatilho:** Evento `task.status` com `to = "blocked"`.
+- **Comportamento do Hook (5 Ramos Cirúrgicos):**
+  - **Ramo A — Workspace Scratch Vazio (Nível L1):** Converte automaticamente o workspace para `worktree` ou `dir` apontando para o repositório do projeto, limpa erros, move o status para `ready` e relança o dispatcher.
+  - **Ramo B — Quebra de Dependências / .venv (Nível L2):** Detecta `ImportError`, `ModuleNotFoundError` ou ferramentas ausentes. Cria imediatamente tarefa `[P0-ENV-FIX]` para `@platform-engineer` / `@site-reliability-engineer`, vincula o card original como dependente em `todo` até a conclusão do reparo e notifica a sala tática.
+  - **Ramo C — Critério de Aceite Ambíguo (`needs_input`, Nível L2):** Cria card de decisão executiva `[P0-DECISÃO]` para o `@product-manager` reformular critérios de aceite ou autorizar sign-off simulado, permitindo o `kanban_unblock`.
+  - **Ramo D — Quota, HTTP 429, Limite de Sessão 6/6 e Modelos Inválidos (Nível L1):** Purga leases de sessões órfãs em `active_sessions.json`, zera `model_override = NULL` e `provider_override = NULL` diretamente no banco, limpa `last_failure_error` e redefine o card para `ready`, permitindo a retomada limpa com o modelo estável do profile.
+  - **Ramo E — Bloqueios de Capability / Credenciais / Owner-Gated (Nível L3):** Caso o card esteja bloqueado por restrições intransponíveis (chaves mTLS, autorização bancária, credenciais privadas do Soberano ou falhas recorrentes não cobertas em L1/L2), o hook **nunca silencia**. Ele cria automaticamente um card de triagem executiva `[P0-OWNER-TRIAGE]` atribuído a `@product-manager` / `@orchestrator` com alerta P0 no `Ops Control` e `War Room`.
+
+---
+
+### Hook 9 — `QuotaModelSentinelHook` (Sentinela Autônomo de Quota, Modelo e Concorrência)
+- **Local de Execução:** Hermes Cron (a cada 15min) + Sentinel Reativo (`backlog_starvation_sentinel.py` e `executeQuotaModelSentinelLifecycle`).
+- **Gatilho:** Cron recorrente de 15 minutos ou varredura de emergência pós-queda.
+- **Custo:** 0 tokens LLM (execução 100% determinística via script SQLite).
 - **Comportamento do Hook:**
-  - **Scratch Vazio:** Converte automaticamente o workspace para `worktree` ou `dir` apontando para o repositório do projeto, atualiza para `ready` e relança o agente.
-  - **Quebra de Dependências / .venv:** Cria uma tarefa P0 vinculada para o `@platform-engineer` / `@site-reliability-engineer`, gata o card original em `todo` até a conclusão e notifica a sala tática.
-  - **Critério de Aceite Ambíguo (`needs_input`):** Cria card P0 de decisão para o `@product-manager` reajustar o critério de aceite e emitir o `kanban_unblock`.
-  - **Sentinela de Concorrência & Modelo:** Purga leases de sessões órfãs em `active_sessions.json` e redefine overrides de modelos instáveis para o modelo estável padrão.
+  1. **Auditoria de Sessões:** Inspeciona `active_sessions.json` de todos os profiles Hermes e purga leases cujo PID local já encerrou, liberando vagas antes de bater no teto de `6/6 sessões`.
+  2. **Purga Incondicional de Overrides:** Executa `UPDATE tasks SET model_override = NULL, provider_override = NULL` em todos os boards de produto, eliminando contaminações de scripts legados e garantindo herança estrita do profile.
+  3. **Auto-Unblock de Quota e 429:** Localiza tarefas paralisadas em `blocked` por quota, rate limit HTTP 429 ou esgotamento de slots, registra comentário explicativo, limpa os campos de falha e promove automaticamente para `ready`.
+  4. **Watchdog de Backlog Starvation:** Se qualquer board de produto atingir 0 tarefas ativas (`ready = 0`, `running = 0`, `todo = 0`), aciona imediatamente o `implementation-planner` (respeitando cooldown de 15min) para fatiar novas demandas estratégicas.
 
 ---
 
@@ -158,7 +171,8 @@ flowchart TD
 | **HK-05** | `OrchestratorFeedback` | Hermes Cron (`orchestrator`) | A cada 4h (varredura de `done`) | Valida encerramento de épicos e alimenta novas metas no backlog. |
 | **HK-06** | `CircuitBreakerDeadlock`| Hermes Dispatcher Watchdog | `consecutive_failures >= 3` | Isola o card em quarentena e alerta o `Ops Control`. |
 | **HK-07** | `StarvationSentinel`   | DeskRPG (`autonomous-lifecycle-hooks.ts`) | 0 tarefas ativas no board | Aciona PM/Planner para gerar novos cards. |
-| **HK-08** | `BlockerTriage`        | DeskRPG (`autonomous-lifecycle-hooks.ts`) | Card transiciona para `blocked` | Auto-remedia scratch, despacha P0 para Platform ou PM. |
+| **HK-08** | `BlockerTriage`        | DeskRPG (`autonomous-lifecycle-hooks.ts`) | Card transiciona para `blocked` | Auto-remedia scratch/quota/sessão, despacha P0 de ambiente, decisão ou Owner. |
+| **HK-09** | `QuotaModelSentinel`   | Hermes Cron + DeskRPG Sentinel | A cada 15min (ou sob demanda) | Purga overrides, destrava cards por 429/quota e monitora starvation com custo zero. |
 
 ---
 
@@ -217,3 +231,23 @@ Implementado em `src/lib/github-lifecycle-hooks.ts` e exposto via `POST /api/web
 1. **Permanência Obrigatória em 'Review':** Enquanto o PR estiver tramitando nos 5 Portões de Fusão, o card no Kanban **deve permanecer estritamente na coluna `review`** (ou `blocked` em caso de conflito ou quebra de CI).
 2. **Intercepção de 'Done' Antecipado (`enforceReviewGateForPrTasks`):** O `automation-events.ts` intercepta qualquer tentativa de mover um card vinculado a PR aberto para `done`, revertendo o status para `review` e alertando a sala tática.
 3. **Merge Efetivo como Gatilho Exclusivo:** O card só é promovido para `done` quando o webhook do GitHub confirma o merge real (`action: 'closed'`, `merged: true`) após a aprovação de todos os 5 portões.
+
+---
+
+## 8. Governança de Níveis de Interação do Kanban (L1, L2, L3)
+
+Para eliminar o risco de "tarefas órfãs" e garantir 100% de autonomia sem intervenção humana acidental, as tarefas e bloqueios são rigorosamente classificados em 3 níveis operacionais:
+
+### A Pirâmide de Níveis Operacionais
+
+| Nível | Classificação | Escopo & Comportamento | Responsáveis & Ações |
+| :--- | :--- | :--- | :--- |
+| **L1** | **Quick / Auto-Remediated** | Resoluções mecânicas, determinísticas e de custo zero em tokens. Executado imediatamente pelo kernel do DeskRPG ou pelo sentinela do cron. | **Hooks HK-08 / HK-09:** Auto-heal de workspace scratch vazio para worktree, purga de leases órfãos em `active_sessions.json`, limpeza incondicional de `model_override` / `provider_override` e auto-unblock de rate limits temporários (HTTP 429). |
+| **L2** | **Complex / Specialist Remediation** | Desafios técnicos que exigem raciocínio especializado de agentes, mas sem necessidade de intervenção do Soberano. | **Especialistas via Cards P0:** Quebra de ambiente `.venv` (`[P0-ENV-FIX]` -> `@platform-engineer`), ambiguidade em critérios de aceite (`[P0-DECISÃO]` -> `@product-manager`), homologação de PRs (`@qa-engineer` / `@reviewer`). O card original aguarda em `todo` como dependente. |
+| **L3** | **Owner-Gated / Executive Triage** | Bloqueios intransponíveis por agentes que demandam segredos físicos, decisões financeiras ou autorizações exclusivas do Soberano. | **C-Suite & Salas de Comando:** Criação automática de `[P0-OWNER-TRIAGE]` atribuído ao `@product-manager` / `@orchestrator`. Alertas imediatos nas salas `Ops Control` e `War Room`. |
+
+### A Regra de Ouro da Automação de Quota, Modelo e Sessão
+
+> **REGRA FUNDAMENTAL:**
+> 1. Quando uma tarefa é bloqueada com `block_kind = 'quota'` ou `block_kind = 'model'` (ou registra erros transitórios de rate limit HTTP 429 / sessão 6/6), o sistema executa **auto-remediação imediata em nível L1**: limpa leases órfãos, zera os campos `model_override` e `provider_override` para garantir que o worker herde o modelo estável padrão do profile, e redefine o status para `ready`.
+> 2. Se o bloqueio for de infraestrutura física, credenciais externas, mTLS bancário ou persistir após auto-remediação, o `BlockerTriageHook` (HK-08) **nunca deixa o card morrer silenciosamente em `blocked`**: ele escala imediatamente a tarefa para **Nível L3**, gerando um card `[P0-OWNER-TRIAGE]` para a liderança executiva tomar providências e disparando alerta na sala tática.

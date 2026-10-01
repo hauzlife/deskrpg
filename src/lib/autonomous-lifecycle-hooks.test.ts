@@ -12,6 +12,7 @@ import {
   resolveWorkspaceForTask,
   cleanOrphanSessionLeases,
   executeBlockerTriageLifecycle,
+  executeQuotaModelSentinelLifecycle,
 } from './autonomous-lifecycle-hooks';
 
 interface TestTaskRow {
@@ -528,6 +529,244 @@ test('executeBlockerTriageLifecycle dispatches P0 decision task for needs_input 
   assert.equal(decisionTask.assignee, 'product-manager');
   assert.equal(decisionTask.priority, 10);
   assert.match(decisionTask.title ?? '', /\[P0-DECISÃO\]/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle auto-heals quota / HTTP 429 / model / session blocks', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-quota-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const taskId = 't_quota_test';
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, body, assignee, status, priority, created_at, workspace_kind, workspace_path, block_kind, last_failure_error, model_override, provider_override)
+    VALUES (?, ?, ?, ?, 'blocked', 5, ?, 'worktree', '/path/to/repo', 'quota', ?, 'gpt-5.3-codex-spark', 'openrouter')
+  `).run(
+    taskId,
+    'Sincronizar telemetria com Langfuse',
+    'Pipeline de observabilidade',
+    'backend-engineer',
+    Math.floor(Date.now() / 1000),
+    'HTTP 429 Too Many Requests: insufficient_quota for model gpt-5.3-codex-spark'
+  );
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'test-chan',
+    boardSlug: 'hot-telegram',
+    taskId,
+    cardTitle: 'Sincronizar telemetria com Langfuse',
+    assignee: 'backend-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.action, 'quota_model_remediated');
+  assert.equal(result.remediatedTaskId, taskId);
+
+  const updatedTask = sqlite.prepare('SELECT status, block_kind, last_failure_error, model_override, provider_override FROM tasks WHERE id = ?').get(taskId) as any;
+  assert.equal(updatedTask.status, 'ready');
+  assert.equal(updatedTask.block_kind, null);
+  assert.equal(updatedTask.last_failure_error, null);
+  assert.equal(updatedTask.model_override, null);
+  assert.equal(updatedTask.provider_override, null);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle dispatches L3 Owner Triage card for capability wall', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-owner-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const taskId = 't_capability_wall';
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, body, assignee, status, priority, created_at, workspace_kind, workspace_path, block_kind, last_failure_error)
+    VALUES (?, ?, ?, ?, 'blocked', 5, ?, 'worktree', '/path/to/repo', 'capability', ?)
+  `).run(
+    taskId,
+    'Configurar chaves bancárias e credenciais PIX no gateway de produção',
+    'Exige autenticação física com e-CNPJ do operador titular',
+    'platform-engineer',
+    Math.floor(Date.now() / 1000),
+    'Acesso negado: requer credenciais mTLS e autorização bancária restrita ao titular da conta (Owner)'
+  );
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'test-chan',
+    boardSlug: 'hot-telegram',
+    taskId,
+    cardTitle: 'Configurar chaves bancárias e credenciais PIX no gateway de produção',
+    assignee: 'platform-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.action, 'owner_triage_dispatched');
+  assert.equal(result.remediatedTaskId, taskId);
+  assert.ok(result.spawnedTaskId);
+
+  const triageTask = sqlite.prepare('SELECT * FROM tasks WHERE id = ?').get(result.spawnedTaskId) as TestTaskRow;
+  assert.equal(triageTask.assignee, 'product-manager');
+  assert.equal(triageTask.priority, 10);
+  assert.match(triageTask.title ?? '', /\[P0-OWNER-TRIAGE\]/);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('HK-09: executeQuotaModelSentinelLifecycle purges overrides and auto-unblocks transient blocked tasks', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-hk09-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  // Insert task with invalid overrides
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, status, created_at, model_override, provider_override)
+    VALUES ('t_override_1', 'Task with bad override', 'ready', ?, 'gpt-5.3-codex-spark', 'openrouter')
+  `).run(Math.floor(Date.now() / 1000));
+
+  // Insert task blocked by quota / 429
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, status, created_at, block_kind, last_failure_error, model_override)
+    VALUES ('t_quota_block_1', 'Blocked by quota', 'blocked', ?, 'quota', 'HTTP 429: rate limit exceeded', 'claude-3-5')
+  `).run(Math.floor(Date.now() / 1000));
+
+  const result = executeQuotaModelSentinelLifecycle({
+    boardSlug: 'test-board',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  assert.equal(result.clearedOverridesCount, 2);
+  assert.equal(result.unblockedTasksCount, 1);
+  assert.deepEqual(result.remediatedTaskIds, ['t_quota_block_1']);
+
+  const task1 = sqlite.prepare('SELECT model_override, provider_override FROM tasks WHERE id = ?').get('t_override_1') as any;
+  assert.equal(task1.model_override, null);
+  assert.equal(task1.provider_override, null);
+
+  const task2 = sqlite.prepare('SELECT status, block_kind, last_failure_error, model_override FROM tasks WHERE id = ?').get('t_quota_block_1') as any;
+  assert.equal(task2.status, 'ready');
+  assert.equal(task2.block_kind, null);
+  assert.equal(task2.last_failure_error, null);
+  assert.equal(task2.model_override, null);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

@@ -1013,8 +1013,28 @@ export function insertTaskSafely(
     const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((c) => c.name);
     const hasWsPath = columns.includes('workspace_path');
     const hasProjId = columns.includes('project_id');
+    const hasModelOverride = columns.includes('model_override');
+    const hasProviderOverride = columns.includes('provider_override');
 
-    if (hasWsPath && hasProjId) {
+    if (hasWsPath && hasProjId && hasModelOverride && hasProviderOverride) {
+      sqlite
+        .prepare(
+          `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, project_id, model_override, provider_override)
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?, NULL, NULL)`
+        )
+        .run(
+          taskId,
+          spec.title,
+          spec.body,
+          spec.assignee,
+          status,
+          spec.priority,
+          now,
+          resolvedWs.workspaceKind,
+          resolvedWs.workspacePath,
+          resolvedWs.projectId
+        );
+    } else if (hasWsPath && hasProjId) {
       sqlite
         .prepare(
           `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, project_id)
@@ -1134,7 +1154,14 @@ export function cleanOrphanSessionLeases(hermesHome?: string): number {
 }
 
 export interface BlockerTriageResult {
-  action: 'workspace_remediated' | 'env_fix_dispatched' | 'needs_input_dispatched' | 'session_cleaned' | 'none';
+  action:
+    | 'workspace_remediated'
+    | 'env_fix_dispatched'
+    | 'needs_input_dispatched'
+    | 'session_cleaned'
+    | 'quota_model_remediated'
+    | 'owner_triage_dispatched'
+    | 'none';
   remediatedTaskId?: string;
   spawnedTaskId?: string;
   details?: string;
@@ -1317,9 +1344,9 @@ export async function executeBlockerTriageLifecycle(args: {
     }
   }
 
-  // --- Branch B: Broken environment / missing dependencies (.venv, missing libs, crypto, daphne, etc.) ---
+  // --- Branch B: Broken environment / missing dependencies (.venv, missing libs, daphne, etc.) ---
   const isEnvIssue =
-    /import(?:error)?:\s*no module named|modulenotfounderror|crypto|daphne|django_extensions|poetry.*not found|broken environment|missing dependency|depend[êe]ncia.*ausente/i.test(
+    /import(?:error)?:\s*no module named|modulenotfounderror|\b(?:daphne|django_extensions)\b|poetry.*not found|broken environment|missing dependency|depend[êe]ncia.*ausente/i.test(
       blockReason
     );
 
@@ -1396,9 +1423,10 @@ export async function executeBlockerTriageLifecycle(args: {
   // --- Branch C: needs_input / Acceptance Criteria Ambiguity ---
   const isNeedsInput =
     blockKind === 'needs_input' ||
-    /needs_input|requer.*autoriz|aguardando.*decis|conversão orgânica|compra teste autorizada|ambiguidade de aceite/i.test(
-      blockReason
-    );
+    (blockKind !== 'capability' &&
+      /needs_input|aguardando.*decis|conversão orgânica|compra teste autorizada|ambiguidade de aceite/i.test(
+        blockReason
+      ));
 
   if (isNeedsInput) {
     const dedupKey = `needs-input-${taskId}`;
@@ -1461,11 +1489,16 @@ export async function executeBlockerTriageLifecycle(args: {
     }
   }
 
-  // --- Branch D: Session ceiling 6/6 or invalid model override ---
-  const isSessionOrModelIssue =
-    /active session limit|model.*not supported|gpt-5\.3-codex-spark/i.test(blockReason);
+  // --- Branch D: Quota, HTTP 429, session ceiling 6/6 or invalid model override ---
+  const isQuotaOrModelOrSession =
+    /active session limit|model.*not supported|gpt-5\.3-codex-spark|quota|rate.*limit|http\s*429|too many requests|insufficient_quota|resource_exhausted/i.test(
+      blockReason
+    ) ||
+    blockKind === 'quota' ||
+    blockKind === 'model' ||
+    blockKind === 'transient';
 
-  if (isSessionOrModelIssue) {
+  if (isQuotaOrModelOrSession) {
     const cleaned = cleanOrphanSessionLeases();
     sqlite
       .prepare(
@@ -1479,10 +1512,35 @@ export async function executeBlockerTriageLifecycle(args: {
       )
       .run(taskId);
 
+    try {
+      sqlite
+        .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .run(
+          taskId,
+          'blocker-triage-hook',
+          `[BlockerTriageHook] Quota / modelo / saturação de sessão auto-remediado: overrides limpos, status resetado para 'ready'.`,
+          now
+        );
+      sqlite
+        .prepare(
+          "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+        )
+        .run(
+          taskId,
+          JSON.stringify({
+            reason: 'quota_model_session_auto_remediated',
+            cleaned_leases: cleaned,
+          }),
+          now
+        );
+    } catch (e) {
+      console.warn(`[autonomous-hooks] Failed to record unblock event:`, e);
+    }
+
     if (tacticalRoom) {
       const content =
-        `⚡ **[SENTINELA DE SESSÃO / MODELO]** \`${taskId}\` — ${cardTitle}\n` +
-        `Detectada saturação de sessões ou modelo incompatível.\n` +
+        `⚡ **[SENTINELA DE QUOTA / MODELO / SESSÃO]** \`${taskId}\` — ${cardTitle}\n` +
+        `Detectada saturação de sessões, quota ou modelo incompatível.\n` +
         `Limpos ${cleaned} leases órfãos, resetado override para o modelo estável do perfil e card retornado a **ready**.`;
       try {
         const msg = await appendRoomMessage({
@@ -1513,11 +1571,195 @@ export async function executeBlockerTriageLifecycle(args: {
     }
 
     return {
-      action: 'session_cleaned',
+      action: 'quota_model_remediated',
       remediatedTaskId: taskId,
-      details: `Cleaned ${cleaned} orphan sessions, cleared model override, moved to ready`,
+      details: `Cleaned ${cleaned} orphan sessions, cleared model/provider overrides, moved to ready`,
+    };
+  }
+
+  // --- Branch E: Capability / Owner-Gated / Hard Blocker / Fallback Triage (L3) ---
+  const dedupKey = `owner-triage-${taskId}`;
+  const insertRes = insertTaskSafely(boardSlug, {
+    title: `[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado ${taskId}`,
+    body:
+      `O card ${taskId} ("${cardTitle}") foi paralisado em nível L3 (Owner-Gated / Capability).\n\n` +
+      `Motivo do bloqueio registrado:\n\`\`\`\n${blockReason.slice(0, 1500)}\n\`\`\`\n\n` +
+      `Instruções para @product-manager / @orchestrator (Nível L3):\n` +
+      `1. Analisar se o bloqueio decorre de credenciais de terceiros, autorização financeira ou escopo restrito ao Soberano.\n` +
+      `2. Caso viável via contorno técnico, delegar para o especialista competente com novo plano.\n` +
+      `3. Se exigir decisão do Soberano, consolidar a síntese executiva na sala War Room / Ops Control.\n` +
+      `4. Executar kanban_unblock no card original ${taskId} após resolução.`,
+    assignee: 'product-manager',
+    priority: 10,
+    parentId: taskId,
+    dedupKey,
+    databasePath: args.databasePath,
+  });
+
+  if (insertRes.success && insertRes.taskId) {
+    try {
+      sqlite
+        .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+        .run(insertRes.taskId, taskId, now);
+    } catch (e) {
+      console.warn(`[autonomous-hooks] Failed to link owner triage task:`, e);
+    }
+
+    if (tacticalRoom) {
+      const content =
+        `🚨 **[AUTO-TRIAGEM EXECUTIVA L3]** \`${taskId}\` — ${cardTitle}\n` +
+        `Card paralisado por restrição estrutural/capability.\n` +
+        `Card de triagem P0 \`${insertRes.taskId}\` atribuído a @product-manager para deliberação executiva.`;
+      try {
+        const msg = await appendRoomMessage({
+          roomId: tacticalRoom.roomId,
+          senderKind: 'system',
+          senderId: null,
+          senderName: 'Blocker Triage Sentinel',
+          content,
+          notice: {
+            kind: 'card_blocked',
+            cardId: taskId,
+            cardTitle,
+            boardSlug,
+            npcName: assignee ?? 'system',
+          },
+        });
+        if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+      } catch {}
+    }
+
+    if (!args.bypassDispatchSpawn) {
+      try {
+        spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+      } catch {}
+    }
+
+    return {
+      action: 'owner_triage_dispatched',
+      remediatedTaskId: taskId,
+      spawnedTaskId: insertRes.taskId,
+      details: `Dispatched L3 owner triage card ${insertRes.taskId} for blocked task ${taskId}`,
     };
   }
 
   return { action: 'none', details: 'no_matching_triage_rule' };
+}
+
+/**
+ * HK-09: QuotaModelSentinelHook — Proactive Sentinel for Quota, Models & Session Cleanups
+ *
+ * Deterministic audit executed reactively or via 15-minute cron:
+ * 1. Cleans orphan session leases across active profiles.
+ * 2. Purges model_override and provider_override to enforce profile-level model inheritance.
+ * 3. Identifies cards in 'blocked' caused by quota, HTTP 429, session limit or invalid model,
+ *    clears their failure states and auto-unblocks them to 'ready'.
+ */
+export interface QuotaModelSentinelResult {
+  inspectedBoard: string;
+  clearedOverridesCount: number;
+  unblockedTasksCount: number;
+  remediatedTaskIds: string[];
+}
+
+export function executeQuotaModelSentinelLifecycle(args: {
+  boardSlug: string;
+  databasePath?: string;
+  bypassDispatchSpawn?: boolean;
+}): QuotaModelSentinelResult {
+  const { boardSlug } = args;
+  const dbPath = args.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+  if (!fs.existsSync(dbPath)) {
+    return {
+      inspectedBoard: boardSlug,
+      clearedOverridesCount: 0,
+      unblockedTasksCount: 0,
+      remediatedTaskIds: [],
+    };
+  }
+
+  const sqlite = getSqliteDatabase(dbPath);
+  cleanOrphanSessionLeases();
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. Clear model and provider overrides
+  const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((c) => c.name);
+  let clearedOverridesCount = 0;
+  if (columns.includes('model_override') && columns.includes('provider_override')) {
+    const info = sqlite
+      .prepare(
+        `UPDATE tasks
+         SET model_override = NULL,
+             provider_override = NULL
+         WHERE model_override IS NOT NULL OR provider_override IS NOT NULL`
+      )
+      .run();
+    clearedOverridesCount = Number(info.changes || 0);
+  }
+
+  // 2. Identify blocked tasks by quota, 429, session limit, or invalid model
+  const blockedRows = sqlite
+    .prepare(`SELECT id, title, block_kind, last_failure_error FROM tasks WHERE status = 'blocked'`)
+    .all() as Array<{ id: string; title: string; block_kind: string | null; last_failure_error: string | null }>;
+
+  const remediatedTaskIds: string[] = [];
+  for (const row of blockedRows) {
+    const reason = `${row.block_kind ?? ''} ${row.last_failure_error ?? ''}`.toLowerCase();
+    const isQuotaOrModel =
+      row.block_kind === 'quota' ||
+      row.block_kind === 'model' ||
+      row.block_kind === 'transient' ||
+      /quota|rate.*limit|http\s*429|too many requests|active session limit|resource_exhausted|insufficient_quota|model.*not supported|gpt-5\.3-codex-spark/i.test(
+        reason
+      );
+
+    if (isQuotaOrModel) {
+      sqlite
+        .prepare(
+          `UPDATE tasks
+           SET status = 'ready',
+               block_kind = NULL,
+               last_failure_error = NULL
+           WHERE id = ?`
+        )
+        .run(row.id);
+
+      try {
+        sqlite
+          .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+          .run(
+            row.id,
+            'quota-model-sentinel',
+            `[HK-09 QuotaModelSentinel] Auto-unblock executado e overrides limpos. Card retornado para 'ready'.`,
+            now
+          );
+        sqlite
+          .prepare(
+            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+          )
+          .run(row.id, JSON.stringify({ reason: 'sentinel_auto_unblock_quota_model' }), now);
+      } catch {}
+
+      remediatedTaskIds.push(row.id);
+    }
+  }
+
+  if (remediatedTaskIds.length > 0 && !args.bypassDispatchSpawn) {
+    try {
+      spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
+    } catch {}
+  }
+
+  return {
+    inspectedBoard: boardSlug,
+    clearedOverridesCount,
+    unblockedTasksCount: remediatedTaskIds.length,
+    remediatedTaskIds,
+  };
 }
