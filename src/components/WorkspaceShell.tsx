@@ -3,7 +3,7 @@
 import type { MouseEvent, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UsersRound, Network, UserRound, Building2 } from "lucide-react";
+import { UsersRound, Network, UserRound, Building2, KanbanSquare } from "lucide-react";
 import DeskRpgMark from "./DeskRpgMark";
 import OfficeBuilding from "./OfficeBuilding";
 import LocaleSwitcher from "./LocaleSwitcher";
@@ -23,6 +23,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     profiles: UsersRound,
     characters: UserRound,
     channels: Building2,
+    tasks: KanbanSquare,
   } as const;
   const links = WORKSPACE_NAV.map(({ key, href }) => ({
     href,
@@ -74,6 +75,10 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </Link>
           <LogoutButton />
           <LocaleSwitcher />
+          <Link href="/tasks" className="workspace-sidebar-action-link flex items-center gap-1.5">
+            <KanbanSquare size={14} aria-hidden="true" />
+            <span>{t("nav.tasks")}</span>
+          </Link>
         </div>
         <div className="workspace-sidebar-art" aria-hidden="true">
           <OfficeBuilding />

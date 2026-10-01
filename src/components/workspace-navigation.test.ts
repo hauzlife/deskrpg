@@ -8,7 +8,7 @@ test("sidebar has four items in onboarding order — my character first", () => 
   // first is the real order, and if it's out of order the user has to guess what's next.
   assert.deepEqual(
     WORKSPACE_NAV.map((item) => item.href),
-    ["/characters", "/gateways", "/profiles", "/channels"],
+    ["/characters", "/gateways", "/profiles", "/channels", "/tasks"],
   );
 });
 

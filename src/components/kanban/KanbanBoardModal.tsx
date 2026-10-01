@@ -56,10 +56,13 @@ import { reviewSupport } from "@/lib/hermes/plugin-capability";
 
 interface KanbanBoardModalProps {
   channelId: string;
+  channels?: Array<{ id: string; name: string }>;
+  onSelectChannel?: (channelId: string) => void;
+  embedded?: boolean;
   /** A draft brought in from a conversation. Not registered on the server until confirmed. */
   initialCreateDraft?: Pick<TaskFormValues, "title" | "body" | "assigneeNpcId">;
   onConnectGateway?: () => void;
-  onClose: () => void;
+  onClose?: () => void;
   /** Bumps by 1 every time a `kanban:event` arrives (GamePageClient holds the socket). Debounced before refetching. */
   refreshTick?: number;
   /** Debounce (ms) from event to refetch. Defaults to `KANBAN_EVENT_DEBOUNCE_MS`. */
@@ -168,6 +171,9 @@ function formFromTask(task: KanbanTask & Record<string, unknown>, npcs: BoardRes
  */
 export default function KanbanBoardModal({
   channelId,
+  channels,
+  onSelectChannel,
+  embedded = false,
   onClose,
   onConnectGateway,
   refreshTick = 0,
@@ -778,11 +784,13 @@ export default function KanbanBoardModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !covered && !editor && !showSettings && !showSwarm) onClose();
+      if (e.key === "Escape" && !covered && !editor && !showSettings && !showSwarm && !embedded) {
+        onClose?.();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, covered, editor, showSettings, showSwarm]);
+  }, [onClose, covered, editor, showSettings, showSwarm, embedded]);
 
   const openEditor = (next: Editor) => {
     setEditorError(null);
@@ -875,14 +883,22 @@ export default function KanbanBoardModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
+      className={
+        embedded
+          ? "w-full h-full flex flex-col min-h-0"
+          : "fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      }
+      onClick={embedded ? undefined : onClose}
     >
       <div
         role="dialog"
-        aria-modal="true"
+        aria-modal={!embedded}
         aria-labelledby="kanban-modal-title"
-        className="bg-bg border border-border rounded-xl shadow-2xl w-[96vw] max-w-[1400px] h-[88dvh] flex flex-col"
+        className={
+          embedded
+            ? "bg-bg border border-border rounded-xl shadow-sm w-full h-full flex flex-col overflow-hidden"
+            : "bg-bg border border-border rounded-xl shadow-2xl w-[96vw] max-w-[1400px] h-[88dvh] flex flex-col"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -895,6 +911,22 @@ export default function KanbanBoardModal({
             )}
           </h2>
           <div className="flex items-center gap-1.5 text-xs">
+            {channels && channels.length > 0 && onSelectChannel && (
+              <div className="flex items-center gap-1 bg-surface-raised px-2.5 py-1 rounded-md border border-border">
+                <span className="text-text-muted font-medium">{t("nav.channels")}:</span>
+                <select
+                  value={channelId}
+                  onChange={(e) => onSelectChannel(e.target.value)}
+                  className="bg-transparent text-text font-semibold focus:outline-none cursor-pointer text-xs"
+                >
+                  {channels.map((ch) => (
+                    <option key={ch.id} value={ch.id} className="bg-bg text-text">
+                      {ch.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <ProjectPicker
               options={projects}
               selected={selectedBoard}
@@ -957,14 +989,16 @@ export default function KanbanBoardModal({
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="ml-1 text-text-muted hover:text-text"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {!embedded && onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t("common.close")}
+                className="ml-1 text-text-muted hover:text-text"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 

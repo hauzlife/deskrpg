@@ -2365,6 +2365,7 @@ const en: Record<string, string> = {
   "nav.profiles": "Employees",
   "nav.characters": "My character",
   "nav.channels": "Offices",
+  "nav.tasks": "Tasks",
   "gateways.employeesTitle": "This gateway's employees",
   "gateways.employeesHint":
     "Register employees (Hermes profiles) and manage their persona, look and model on the Employees page.",
