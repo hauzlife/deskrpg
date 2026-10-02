@@ -932,41 +932,54 @@ export function insertTaskSafely(
     sqlite.exec('BEGIN IMMEDIATE');
     transactionOpen = true;
 
+    // Ensure dedupKey is permanently stamped in body so future queries find it deterministically
+    let finalBody = spec.body || '';
+    if (spec.dedupKey && !finalBody.includes(spec.dedupKey)) {
+      finalBody = finalBody ? `${finalBody}\n\n<!-- dedupKey: ${spec.dedupKey} -->` : `<!-- dedupKey: ${spec.dedupKey} -->`;
+    }
+
     let existing: { id?: string } | undefined;
     if (spec.dedupKey) {
       existing = sqlite
         .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ? LIMIT 1")
         .get(`%${spec.dedupKey}%`) as { id?: string } | undefined;
+    }
 
-      if (existing?.id) {
-        if (spec.updateComment) {
-          const now = Math.floor(Date.now() / 1000);
-          try {
-            sqlite
-              .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
-              .run(existing.id, 'alertmanager-webhook', spec.updateComment, now);
-          } catch (commentErr) {
-            console.warn(`[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`, commentErr);
-          }
-          try {
-            sqlite
-              .prepare(
-                "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)"
-              )
-              .run(
-                existing.id,
-                JSON.stringify({ source: 'alertmanager-webhook', action: 'deduplicated', dedupKey: spec.dedupKey }),
-                now
-              );
-          } catch (eventErr) {
-            console.warn(`[autonomous-hooks] Failed to append dedup event for ${existing.id}:`, eventErr);
-          }
+    // Always check title idempotency as well, preventing duplicate cards with identical summary
+    if (!existing) {
+      existing = sqlite
+        .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND title = ? LIMIT 1")
+        .get(spec.title) as { id?: string } | undefined;
+    }
+
+    if (existing?.id) {
+      if (spec.updateComment) {
+        const now = Math.floor(Date.now() / 1000);
+        try {
+          sqlite
+            .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+            .run(existing.id, 'alertmanager-webhook', spec.updateComment, now);
+        } catch (commentErr) {
+          console.warn(`[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`, commentErr);
         }
-        sqlite.exec('COMMIT');
-        transactionOpen = false;
-        console.log(`[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
-        return { success: true, taskId: existing.id, reason: 'updated_existing' };
+        try {
+          sqlite
+            .prepare(
+              "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)"
+            )
+            .run(
+              existing.id,
+              JSON.stringify({ source: 'alertmanager-webhook', action: 'deduplicated', dedupKey: spec.dedupKey }),
+              now
+            );
+        } catch (eventErr) {
+          console.warn(`[autonomous-hooks] Failed to append dedup event for ${existing.id}:`, eventErr);
+        }
       }
+      sqlite.exec('COMMIT');
+      transactionOpen = false;
+      console.log(`[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
+      return { success: true, taskId: existing.id, reason: 'updated_existing' };
     }
 
     // WIP Limit Check (performed inside the same transaction as deduplication).
@@ -985,25 +998,13 @@ export function insertTaskSafely(
       return { success: false, reason };
     }
 
-    // Preserve title idempotency for non-alert callers. Alert callers use dedupKey so
-    // distinct targets with the same human-readable summary remain independent cards.
-    if (!spec.dedupKey) {
-      existing = sqlite.prepare('SELECT id FROM tasks WHERE title = ?').get(spec.title) as { id?: string } | undefined;
-      if (existing?.id) {
-        sqlite.exec('COMMIT');
-        transactionOpen = false;
-        console.log(`[autonomous-hooks] Task already exists on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
-        return { success: true, taskId: existing.id, reason: 'already_exists' };
-      }
-    }
-
     const taskId = 't_' + randomUUID().replace(/-/g, '').slice(0, 8);
     const now = Math.floor(Date.now() / 1000);
     const status = spec.initialStatus ?? 'ready';
 
     const resolvedWs = resolveWorkspaceForTask(boardSlug, {
       title: spec.title,
-      body: spec.body,
+      body: finalBody,
       assignee: spec.assignee,
       workspaceKind: spec.workspaceKind,
       workspacePath: spec.workspacePath,
@@ -1025,7 +1026,7 @@ export function insertTaskSafely(
         .run(
           taskId,
           spec.title,
-          spec.body,
+          finalBody,
           spec.assignee,
           status,
           spec.priority,
@@ -1043,7 +1044,7 @@ export function insertTaskSafely(
         .run(
           taskId,
           spec.title,
-          spec.body,
+          finalBody,
           spec.assignee,
           status,
           spec.priority,
@@ -1058,7 +1059,7 @@ export function insertTaskSafely(
           `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind)
            VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?)`
         )
-        .run(taskId, spec.title, spec.body, spec.assignee, status, spec.priority, now, resolvedWs.workspaceKind);
+        .run(taskId, spec.title, finalBody, spec.assignee, status, spec.priority, now, resolvedWs.workspaceKind);
     }
 
     // Link parent
@@ -1221,6 +1222,23 @@ export async function executeBlockerTriageLifecycle(args: {
 
   if (!taskRow) {
     return { action: 'none', details: 'task_not_found' };
+  }
+
+  // --- RECURSION GUARD: Prevent Infinite Recursive Triage Chains ---
+  const isAlreadyTriageTask =
+    /\[(?:P0-OWNER-TRIAGE|P0-DECISÃO|P0-ENV-FIX|EPIC-TRIAGE)\]|triagem executiva/i.test(
+      taskRow.title
+    );
+  if (isAlreadyTriageTask) {
+    console.warn(
+      `[autonomous-hooks] Refusing recursive triage for already-triaged task ${taskId} ("${taskRow.title}")`
+    );
+    sqlite
+      .prepare(
+        "UPDATE tasks SET block_kind = 'quarantine' WHERE id = ?"
+      )
+      .run(taskId);
+    return { action: 'none', details: 'recursive_triage_prevented' };
   }
 
   const eventRow = sqlite
@@ -1578,6 +1596,36 @@ export async function executeBlockerTriageLifecycle(args: {
   }
 
   // --- Branch E: Capability / Owner-Gated / Hard Blocker / Fallback Triage (L3) ---
+  // Board-level triage cap: If an open triage card already exists on this board, aggregate into it
+  const existingBoardTriage = sqlite
+    .prepare(
+      "SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%[P0-OWNER-TRIAGE]%' OR title LIKE '%[EPIC-TRIAGE]%') LIMIT 1"
+    )
+    .get() as { id: string; title: string } | undefined;
+
+  if (existingBoardTriage && existingBoardTriage.id !== taskId) {
+    try {
+      sqlite
+        .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+        .run(existingBoardTriage.id, taskId, now);
+      sqlite
+        .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .run(
+          existingBoardTriage.id,
+          'blocker-triage-sentinel',
+          `⚠️ [NOVO BLOQUEIO AGREGADO] O card ${taskId} ("${cardTitle}") também bloqueou em L3 e foi vinculado a esta triagem existente.`,
+          now
+        );
+    } catch {}
+
+    return {
+      action: 'owner_triage_aggregated',
+      remediatedTaskId: taskId,
+      spawnedTaskId: existingBoardTriage.id,
+      details: `Aggregated into existing board triage card ${existingBoardTriage.id}`,
+    };
+  }
+
   const dedupKey = `owner-triage-${taskId}`;
   const insertRes = insertTaskSafely(boardSlug, {
     title: `[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado ${taskId}`,

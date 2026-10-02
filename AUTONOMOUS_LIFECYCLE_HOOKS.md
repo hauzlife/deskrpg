@@ -251,3 +251,21 @@ Para eliminar o risco de "tarefas órfãs" e garantir 100% de autonomia sem inte
 > **REGRA FUNDAMENTAL:**
 > 1. Quando uma tarefa é bloqueada com `block_kind = 'quota'` ou `block_kind = 'model'` (ou registra erros transitórios de rate limit HTTP 429 / sessão 6/6), o sistema executa **auto-remediação imediata em nível L1**: limpa leases órfãos, zera os campos `model_override` e `provider_override` para garantir que o worker herde o modelo estável padrão do profile, e redefine o status para `ready`.
 > 2. Se o bloqueio for de infraestrutura física, credenciais externas, mTLS bancário ou persistir após auto-remediação, o `BlockerTriageHook` (HK-08) **nunca deixa o card morrer silenciosamente em `blocked`**: ele escala imediatamente a tarefa para **Nível L3**, gerando um card `[P0-OWNER-TRIAGE]` para a liderança executiva tomar providências e disparando alerta na sala tática.
+
+---
+
+## 9. Resolução Definitiva da Proliferação e Recursão de Tarefas (Root-Cause Fix)
+
+### 9.1. O Diagnóstico da Causa Raiz da Explosão
+A criação massiva de mais de 440 cartões idênticos de `[P0-OWNER-TRIAGE]` decorria de 3 falhas combinadas no motor de eventos:
+1. **Recursão Infinita Sem Trava:** Quando um card de triagem `[P0-OWNER-TRIAGE]` sofria falha ou bloqueio, o `BlockerTriageHook` era acionado sobre ele mesmo, criando uma triagem da triagem (`[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado t_triage_...`), deflagrando uma árvore binária exponencial (exatamente 63 cópias por raiz).
+2. **Perda do Marcador de Deduplicação:** O `insertTaskSafely` verificava `body LIKE '%dedupKey%'`, mas não persistia o marcador `<!-- dedupKey -->` no corpo do cartão caso o chamador omitisse a tag. Assim, a cada verificação subsequente o banco retornava nulo e criava um novo card. Além disso, a busca por título idêntico era ignorada quando um `dedupKey` era fornecido.
+3. **Ausência de Teto de Triagem por Board:** Múltiplos bloqueios em um mesmo board criavam dezenas de cartões de triagem independentes em vez de consolidar os incidentes.
+
+### 9.2. As 3 Barreira de Proteção Implementadas
+1. **Guarda de Recursão Rígida (Recursion Guard):**
+   - Se o card bloqueado possuir no título `[P0-OWNER-TRIAGE]`, `[P0-DECISÃO]`, `[P0-ENV-FIX]` ou `[EPIC-TRIAGE]`, o hook **rejeita categoricamente a criação de qualquer nova tarefa**, coloca o card em quarentena (`block_kind = 'quarantine'`) e encerra o ciclo.
+2. **Teto de Triagem por Board (Board-Level Triage Cap):**
+   - É estritamente proibido existir mais de 1 card de triagem executiva ativo por board. Bloqueios subsequentes são agregados via comentário e dependência ao card de triagem existente (`owner_triage_aggregated`).
+3. **Persistência Forçada de `dedupKey` & Idempotência por Título:**
+   - O `insertTaskSafely` agora injeta incondicionalmente a tag `<!-- dedupKey: ${spec.dedupKey} -->` no corpo da tarefa e valida simultaneamente a duplicidade por `dedupKey` e por título exato. Tarefas já existentes retornam `already_exists` imediatamente.

@@ -770,3 +770,163 @@ test('HK-09: executeQuotaModelSentinelLifecycle purges overrides and auto-unbloc
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+test('executeBlockerTriageLifecycle blocks recursive triage on already-triaged cards', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recursion-guard-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const now = Math.floor(Date.now() / 1000);
+  const triageTaskId = 't_triage_recursion';
+
+  // Insert a task that is ALREADY a triage task and enters blocked
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, status, created_at, block_kind, last_failure_error)
+    VALUES (?, '[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado t_root', 'blocked', ?, 'capability', 'Failed again')
+  `).run(triageTaskId, now);
+
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'c_test',
+    boardSlug: 'test-board',
+    taskId: triageTaskId,
+    cardTitle: '[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado t_root',
+    assignee: 'product-manager',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  // Verify that recursion is prevented and no child triage task is spawned
+  assert.equal(result.action, 'none');
+  assert.equal(result.details, 'recursive_triage_prevented');
+
+  const task = sqlite.prepare('SELECT status, block_kind FROM tasks WHERE id = ?').get(triageTaskId) as any;
+  assert.equal(task.block_kind, 'quarantine');
+
+  // Verify total count in table is STILL 1 (no new task created)
+  const totalTasks = sqlite.prepare('SELECT count(*) as count FROM tasks').get() as any;
+  assert.equal(totalTasks.count, 1);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('executeBlockerTriageLifecycle aggregates into existing board triage card without duplicating', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'triage-cap-test-'));
+  const dbPath = path.join(tmpDir, 'test.db');
+  const sqlite = getSqliteDatabase(dbPath);
+
+  sqlite.exec(`
+    CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT,
+      assignee TEXT,
+      status TEXT NOT NULL,
+      priority INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      workspace_kind TEXT NOT NULL DEFAULT 'scratch',
+      workspace_path TEXT,
+      project_id TEXT,
+      block_kind TEXT,
+      last_failure_error TEXT,
+      model_override TEXT,
+      provider_override TEXT
+    );
+    CREATE TABLE task_links (
+      parent_id TEXT NOT NULL,
+      child_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (parent_id, child_id)
+    );
+    CREATE TABLE task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      body TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE task_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      run_id INTEGER,
+      kind TEXT NOT NULL,
+      payload TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. Insert existing master triage card on the board
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, status, created_at)
+    VALUES ('t_master_triage', '[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado t_first', 'ready', ?)
+  `).run(now);
+
+  // 2. Insert a second, different task that gets blocked
+  sqlite.prepare(`
+    INSERT INTO tasks (id, title, status, created_at, block_kind, last_failure_error, workspace_kind)
+    VALUES ('t_second_blocked', 'Feature A travou em permissões', 'blocked', ?, 'capability', 'Permissão negada no host', 'worktree')
+  `).run(now);
+
+  // 3. Run blocker triage lifecycle on the second task
+  const result = await executeBlockerTriageLifecycle({
+    channelId: 'c_test',
+    boardSlug: 'test-board',
+    taskId: 't_second_blocked',
+    cardTitle: 'Feature A travou em permissões',
+    assignee: 'backend-engineer',
+    databasePath: dbPath,
+    bypassDispatchSpawn: true,
+  });
+
+  // Verify it AGGREGATED instead of creating another triage task
+  assert.equal(result.action, 'owner_triage_aggregated');
+  assert.equal(result.remediatedTaskId, 't_second_blocked');
+  assert.equal(result.spawnedTaskId, 't_master_triage');
+
+  // Verify total count in table is STILL 2 (no duplicate triage card created)
+  const totalTasks = sqlite.prepare('SELECT count(*) as count FROM tasks').get() as any;
+  assert.equal(totalTasks.count, 2);
+
+  // Verify comment was added to the existing master triage
+  const comments = sqlite.prepare('SELECT body FROM task_comments WHERE task_id = ?').all('t_master_triage') as any[];
+  assert.ok(comments.some((c) => c.body.includes('[NOVO BLOQUEIO AGREGADO]')));
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});

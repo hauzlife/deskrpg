@@ -135,7 +135,22 @@ export function resolveBoardSlug(labels: Record<string, string>): string {
   const job = (labels.job || "").toLowerCase();
   const component = (labels.component || "").toLowerCase();
 
-  const fallback =
+  const isInfra =
+    alertname.includes("pm2") ||
+    alertname.includes("crash") ||
+    alertname.includes("cluster") ||
+    alertname.includes("stderr") ||
+    alertname.includes("restart") ||
+    alertname.includes("error_burst") ||
+    alertname.includes("error_ratio") ||
+    alertname.includes("warning_burst") ||
+    alertname.includes("node") ||
+    alertname.includes("host") ||
+    alertname.includes("disk") ||
+    alertname.includes("memory") ||
+    alertname.includes("cpu") ||
+    alertname.includes("endpointdown") ||
+    alertname.includes("sslcert") ||
     tier.includes("infra") ||
     tier.includes("platform") ||
     tier.includes("system") ||
@@ -145,27 +160,22 @@ export function resolveBoardSlug(labels: Record<string, string>): string {
     job.includes("infra") ||
     job.includes("system") ||
     component.includes("node") ||
-    component.includes("system") ||
-    alertname.includes("node") ||
-    alertname.includes("host") ||
-    alertname.includes("disk") ||
-    alertname.includes("memory") ||
-    alertname.includes("cpu") ||
-    alertname.includes("endpointdown") ||
-    alertname.includes("sslcert")
-      ? "infra-ops"
-      : tier.includes("traffic") ||
-          tier.includes("billing") ||
-          tier.includes("telegram") ||
-          labels.bot
-        ? "hot-telegram"
-        : tier.includes("mystelia") || tier.includes("esoteric")
-          ? "mystelia"
-          : tier.includes("crypto") || tier.includes("bloopu")
-            ? "bloopu"
-            : tier.includes("social")
-              ? "social"
-              : "hot-telegram";
+    component.includes("system");
+
+  const fallback = isInfra
+    ? "infra-ops"
+    : tier.includes("traffic") ||
+        tier.includes("billing") ||
+        tier.includes("telegram") ||
+        labels.bot
+      ? "hot-telegram"
+      : tier.includes("mystelia") || tier.includes("esoteric")
+        ? "mystelia"
+        : tier.includes("crypto") || tier.includes("bloopu")
+          ? "bloopu"
+          : tier.includes("social")
+            ? "social"
+            : "hot-telegram";
 
   const explicit = (labels.project || labels.board || "").trim().toLowerCase();
   return explicit && isSafeBoardSlug(explicit) ? explicit : fallback;
