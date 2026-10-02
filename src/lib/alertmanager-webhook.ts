@@ -534,14 +534,14 @@ export async function POST(req: NextRequest) {
             // Search by fingerprint marker first, then fallback to alertname/summary
             let tasks = sqlite
               .prepare(
-                "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ?",
+                "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND title NOT LIKE '%Infra Health Dashboard%' AND title NOT LIKE '%Incident Sentinel%' AND body LIKE ?",
               )
               .all(`%${dedupKey}%`) as Array<{ id: string; title: string; assignee: string }>;
 
             if (tasks.length === 0) {
               tasks = sqlite
                 .prepare(
-                  "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE ? OR body LIKE ?)",
+                  "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND title NOT LIKE '%Infra Health Dashboard%' AND title NOT LIKE '%Incident Sentinel%' AND (title LIKE ? OR body LIKE ?)",
                 )
                 .all(`%${searchKeyword}%`, `%${searchKeyword}%`) as Array<{
                 id: string;
@@ -550,7 +550,25 @@ export async function POST(req: NextRequest) {
               }>;
             }
 
+            // Also notify active master card if present, without closing it
+            const activeMaster = sqlite
+              .prepare(
+                "SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%Infra Health Dashboard%' OR title LIKE '%Incident Sentinel%') LIMIT 1",
+              )
+              .get() as { id: string; title: string } | undefined;
+
             const now = Math.floor(Date.now() / 1000);
+            if (activeMaster) {
+              const masterComment = `✅ [TELEMETRIA NORMALIZADA] O alerta '${summary}' foi resolvido no Grafana/Alertmanager em ${alert.endsAt || new Date().toISOString()}. Sub-evento normalizado no dashboard.`;
+              try {
+                sqlite
+                  .prepare(
+                    "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, 'sre-grafana-alertmanager', ?, ?)",
+                  )
+                  .run(activeMaster.id, masterComment, now);
+              } catch {}
+            }
+
             for (const t of tasks) {
               const resolveComment = `✅ [AUTO-RESOLVED] O alerta '${summary}' foi resolvido no Grafana/Alertmanager em ${alert.endsAt || new Date().toISOString()}. Telemetria normalizada.`;
               try {
