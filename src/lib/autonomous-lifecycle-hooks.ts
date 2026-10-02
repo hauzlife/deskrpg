@@ -898,6 +898,44 @@ async function dispatchAutomatedRemediation(
   }
 }
 
+export function normalizeSemanticTitle(title: string): string {
+  return (title || '')
+    .toLowerCase()
+    .replace(/\[.*?\]/g, '') // strip tag brackets like [P0-OWNER-TRIAGE], [INCIDENT], etc.
+    .replace(/t_[a-f0-9]{8,12}/g, '') // strip task IDs
+    .replace(/#[0-9]+/g, '') // strip numbers
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ') // strip punctuation
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function ensureBoardAntiFloodTriggers(sqlite: ReturnType<typeof getSqliteDatabase>): void {
+  try {
+    sqlite.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_antiflood_active_limit
+      BEFORE INSERT ON tasks
+      FOR EACH ROW
+      WHEN NEW.status IN ('ready', 'running', 'blocked', 'review', 'todo')
+      BEGIN
+          SELECT CASE
+              WHEN (SELECT COUNT(*) FROM tasks WHERE status IN ('ready', 'running', 'blocked', 'review') AND id != NEW.id) >= 20
+              THEN RAISE(ABORT, '[ANTI-FLOOD-GATE] Hard limit of 20 active tasks reached on this board.')
+          END;
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_antiflood_title_dedup
+      BEFORE INSERT ON tasks
+      FOR EACH ROW
+      WHEN NEW.status IN ('ready', 'running', 'blocked', 'review', 'todo')
+      BEGIN
+          SELECT CASE
+              WHEN (SELECT COUNT(*) FROM tasks WHERE title = NEW.title AND status NOT IN ('done', 'archived') AND id != NEW.id) >= 1
+              THEN RAISE(ABORT, '[ANTI-FLOOD-GATE] An active task with this exact title already exists on this board.')
+          END;
+      END;
+    `);
+  } catch {}
+}
+
 export function insertTaskSafely(
   boardSlug: string,
   spec: {
@@ -938,6 +976,8 @@ export function insertTaskSafely(
       finalBody = finalBody ? `${finalBody}\n\n<!-- dedupKey: ${spec.dedupKey} -->` : `<!-- dedupKey: ${spec.dedupKey} -->`;
     }
 
+    ensureBoardAntiFloodTriggers(sqlite);
+
     let existing: { id?: string } | undefined;
     if (spec.dedupKey) {
       existing = sqlite
@@ -945,11 +985,27 @@ export function insertTaskSafely(
         .get(`%${spec.dedupKey}%`) as { id?: string } | undefined;
     }
 
-    // Always check title idempotency as well, preventing duplicate cards with identical summary
+    // 1. Exact title idempotency check
     if (!existing) {
       existing = sqlite
         .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND title = ? LIMIT 1")
         .get(spec.title) as { id?: string } | undefined;
+    }
+
+    // 2. Normalized semantic title check for triage and automated cards
+    if (!existing) {
+      const normalizedNew = normalizeSemanticTitle(spec.title);
+      if (normalizedNew.length >= 8 && /triagem|triage|env-fix|reparar|alerta|incident/i.test(spec.title)) {
+        const activeRows = sqlite
+          .prepare("SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived')")
+          .all() as Array<{ id: string; title: string }>;
+        for (const row of activeRows) {
+          if (normalizeSemanticTitle(row.title) === normalizedNew) {
+            existing = { id: row.id };
+            break;
+          }
+        }
+      }
     }
 
     if (existing?.id) {
@@ -982,9 +1038,10 @@ export function insertTaskSafely(
       return { success: true, taskId: existing.id, reason: 'updated_existing' };
     }
 
-    // WIP Limit Check (performed inside the same transaction as deduplication).
-    // Emergency P0 tasks (priority >= 9 or bypassWipLimit) bypass WIP checks to prevent deadlocks.
+    const now = Math.floor(Date.now() / 1000);
     const isEmergencyP0 = spec.priority >= 9 || spec.bypassWipLimit === true;
+
+    // --- ANTI-FLOOD LAYER 1: Regular WIP Limit Check ---
     const wipLimit = spec.wipLimit ?? 5;
     const activeRow = sqlite
       .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review')")
@@ -998,8 +1055,35 @@ export function insertTaskSafely(
       return { success: false, reason };
     }
 
+    // --- ANTI-FLOOD LAYER 2: Hard Board Active Task Ceiling (Iron Cap) ---
+    const totalActiveRow = sqlite
+      .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review', 'blocked', 'todo')")
+      .get() as { count?: number } | undefined;
+    const totalActiveCount = Number(totalActiveRow?.count ?? 0);
+    const HARD_CEILING = isEmergencyP0 ? 20 : 15;
+    if (totalActiveCount >= HARD_CEILING) {
+      const reason = `[ANTI-FLOOD-GATE] Hard active task ceiling reached on board "${boardSlug}": ${totalActiveCount} active tasks (max ceiling is ${HARD_CEILING}).`;
+      sqlite.exec('ROLLBACK');
+      transactionOpen = false;
+      console.warn(`[autonomous-hooks] Task creation blocked by hard ceiling: ${reason}`);
+      return { success: false, reason };
+    }
+
+    // --- ANTI-FLOOD LAYER 3: Sliding-Window Rate Limiter (Max 5 tasks per 5 minutes) ---
+    const recentWindowSeconds = 300;
+    const recentRow = sqlite
+      .prepare("SELECT count(*) as count FROM tasks WHERE created_at >= ?")
+      .get(now - recentWindowSeconds) as { count?: number } | undefined;
+    const recentCount = Number(recentRow?.count ?? 0);
+    if (!isEmergencyP0 && recentCount >= 5) {
+      const reason = `[ANTI-FLOOD-GATE] Rate limit exceeded on board "${boardSlug}": ${recentCount} tasks created in the last 5 minutes. Cooling down.`;
+      sqlite.exec('ROLLBACK');
+      transactionOpen = false;
+      console.warn(`[autonomous-hooks] Task creation blocked by rate limiter: ${reason}`);
+      return { success: false, reason };
+    }
+
     const taskId = 't_' + randomUUID().replace(/-/g, '').slice(0, 8);
-    const now = Math.floor(Date.now() / 1000);
     const status = spec.initialStatus ?? 'ready';
 
     const resolvedWs = resolveWorkspaceForTask(boardSlug, {
