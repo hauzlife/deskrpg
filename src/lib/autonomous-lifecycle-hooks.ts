@@ -926,6 +926,7 @@ export function ensureBoardAntiFloodTriggers(sqlite: ReturnType<typeof getSqlite
       BEFORE INSERT ON tasks
       FOR EACH ROW
       WHEN NEW.status IN ('ready', 'running', 'blocked', 'review', 'todo')
+       AND NEW.body NOT LIKE '%<!-- alertmanager-fingerprint:%'
       BEGIN
           SELECT CASE
               WHEN (SELECT COUNT(*) FROM tasks WHERE title = NEW.title AND status NOT IN ('done', 'archived') AND id != NEW.id) >= 1
@@ -985,15 +986,15 @@ export function insertTaskSafely(
         .get(`%${spec.dedupKey}%`) as { id?: string } | undefined;
     }
 
-    // 1. Exact title idempotency check
-    if (!existing) {
+    // 1. Exact title idempotency check (only when caller has not provided an explicit dedupKey)
+    if (!existing && !spec.dedupKey) {
       existing = sqlite
         .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND title = ? LIMIT 1")
         .get(spec.title) as { id?: string } | undefined;
     }
 
-    // 2. Normalized semantic title check for triage and automated cards
-    if (!existing) {
+    // 2. Normalized semantic title check for triage and automated cards (only when caller has not provided an explicit dedupKey)
+    if (!existing && !spec.dedupKey) {
       const normalizedNew = normalizeSemanticTitle(spec.title);
       if (normalizedNew.length >= 8 && /triagem|triage|env-fix|reparar|alerta|incident/i.test(spec.title)) {
         const activeRows = sqlite

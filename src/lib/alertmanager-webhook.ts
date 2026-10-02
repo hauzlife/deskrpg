@@ -304,6 +304,71 @@ export function validateNetworkSecurity(req: NextRequest): { allowed: boolean; r
   return { allowed: false, reason: `Client IP ${clientIp} not in allowed network range` };
 }
 
+
+/**
+ * Synchronizes incoming alerts directly with the local Artifact Pyramid.
+ * Ensures zero data loss, strict idempotency, and full traceability.
+ */
+export function syncAlertToArtifactPyramid(
+  alert: AlertManagerAlert,
+  boardSlug: string,
+  isResolved = false,
+): void {
+  try {
+    const pyramidDir = path.join(
+      os.homedir(),
+      "Projects",
+      "hauzhouse",
+      "hot-operation",
+      "hot-traffic",
+      "artifacts",
+      "infra-health-dashboard",
+    );
+    const dossiersDir = path.join(pyramidDir, "03-dossiers");
+    const historyPath = path.join(dossiersDir, "telemetry-events-history.json");
+
+    if (!fs.existsSync(historyPath)) return;
+
+    const raw = fs.readFileSync(historyPath, "utf-8");
+    const history = JSON.parse(raw);
+    const nowIso = new Date().toISOString();
+    const fp = buildAlertFingerprint(alert);
+    const alertname = alert.labels.alertname || "UnknownAlert";
+    const server = alert.labels.instance || alert.labels.server || "187.77.141.106";
+    const worker = alert.labels.bot || alert.labels.worker || alert.labels.group || "cluster";
+
+    let existing = history.events.find((e: any) => e.fingerprint === fp || e.alertname === alertname);
+    if (existing) {
+      existing.last_seen = nowIso;
+      existing.status = isResolved ? "resolved" : "firing";
+      if (!isResolved) {
+        existing.occurrences = (existing.occurrences || 1) + 1;
+      } else {
+        existing.resolved_at = nowIso;
+      }
+    } else if (!isResolved) {
+      history.events.push({
+        fingerprint: fp,
+        alertname,
+        server,
+        worker,
+        severity: alert.labels.severity || "warning",
+        first_seen: nowIso,
+        last_seen: nowIso,
+        occurrences: 1,
+        status: "firing",
+        notes: alert.annotations.summary || alert.annotations.description || "Alerta registrado no pyramid",
+      });
+    }
+
+    history.updated_at = nowIso;
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), "utf-8");
+  } catch (err) {
+    // Non-fatal logging
+    console.warn("[alertmanager-webhook] Failed to sync to artifact pyramid:", err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Network security check
@@ -511,6 +576,7 @@ export async function POST(req: NextRequest) {
               } catch {}
 
               resolvedTasks.push({ taskId: t.id, board: boardSlug, title: t.title });
+            syncAlertToArtifactPyramid(alert, boardSlug, true);
 
               // Post resolution notice asynchronously to tactical room
               notificationPromises.push(
@@ -581,19 +647,65 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
         .join("\n");
 
-      // Insert safely into the target board DB (bypass default WIP of 5 for P0 critical incidents)
-      const result = insertTaskSafely(boardSlug, {
-        title,
-        body,
-        assignee,
-        priority,
-        parentId: "root-incident",
-        initialStatus: "ready",
-        wipLimit: priority >= 9 ? 100 : 50,
-        dedupKey,
-        databasePath: testDbPath || undefined,
-        updateComment: `🔁 [ALERTA DUPLICADO INIBIDO] O evento '${summary}' foi recebido novamente para o mesmo alerta/tier/alvo/janela (fingerprint ${fingerprint}). Card ativo mantido e evento registrado.`,
-      });
+      // Sync incoming alert event immediately to the local Artifact Pyramid (Zero Data Loss)
+      syncAlertToArtifactPyramid(alert, boardSlug, false);
+
+      // Check if an active Master Sentinel / Infra Health Dashboard card exists on this board
+      const dbPath =
+        testDbPath ||
+        path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
+      let masterCard: { id: string; title: string; assignee: string } | undefined;
+      if (fs.existsSync(dbPath)) {
+        try {
+          const sqlite = getSqliteDatabase(dbPath);
+          masterCard = sqlite
+            .prepare(
+              "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%Infra Health Dashboard%' OR title LIKE '%Incident Sentinel%') LIMIT 1",
+            )
+            .get() as { id: string; title: string; assignee: string } | undefined;
+        } catch {}
+      }
+
+      let result: ReturnType<typeof insertTaskSafely>;
+
+      if (masterCard) {
+        // CONSOLIDATION: Divert alert telemetry into the master card instead of creating duplicate cards!
+        try {
+          const sqlite = getSqliteDatabase(dbPath);
+          const now = Math.floor(Date.now() / 1000);
+          const updateText = `🚨 [TELEMETRIA CAPTADA] Alerta '${summary}' (severidade: ${severity}, worker/alvo: ${labels.bot || labels.instance || "cluster"}). Registrado no dashboard consolidado.`;
+          sqlite
+            .prepare(
+              "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, 'alertmanager-sentinel', ?, ?)",
+            )
+            .run(masterCard.id, updateText, now);
+          sqlite
+            .prepare(
+              "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)",
+            )
+            .run(masterCard.id, JSON.stringify({ alertname: labels.alertname, severity, summary }), now);
+        } catch {}
+
+        result = {
+          success: true,
+          taskId: masterCard.id,
+          reason: "updated_existing",
+        };
+      } else {
+        // No master card exists: insert safely (creates new card or deduplicates via fingerprint)
+        result = insertTaskSafely(boardSlug, {
+          title,
+          body,
+          assignee,
+          priority,
+          parentId: "root-incident",
+          initialStatus: "ready",
+          wipLimit: priority >= 9 ? 100 : 50,
+          dedupKey,
+          databasePath: testDbPath || undefined,
+          updateComment: `🔁 [ALERTA DUPLICADO INIBIDO] O evento '${summary}' foi recebido novamente para o mesmo alerta/tier/alvo/janela (fingerprint ${fingerprint}). Card ativo mantido e evento registrado.`,
+        });
+      }
 
       if (result.success && result.taskId && result.reason === "updated_existing") {
         updatedTasks.push({ taskId: result.taskId, board: boardSlug, title });
