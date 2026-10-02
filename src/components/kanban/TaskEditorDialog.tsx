@@ -295,6 +295,7 @@ export default function TaskEditorDialog({
                       checked={values.parents.includes(task.id)}
                       onChange={() => toggleParent(task.id)}
                     />
+                    <span className="font-mono text-[10px] text-text-muted">[{task.id}]</span>
                     <span className="truncate">{task.title}</span>
                     <span className="ml-auto text-[10px] text-text-dim">
                       {t(`kanban.column.${task.status}`)}
