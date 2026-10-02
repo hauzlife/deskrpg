@@ -18,15 +18,18 @@ import { createKanbanApi } from "@/components/kanban/kanban-api";
 
 export type ArtifactsModalProps = {
   channelId: string;
-  npcs: ArtifactListNpc[];
+  channels?: Array<{ id: string; name: string }>;
+  onSelectChannel?: (channelId: string) => void;
+  embedded?: boolean;
+  npcs?: ArtifactListNpc[];
   /** Bumps on every `artifact:event` (GamePageClient holds the socket). Debounced to reload the list. */
-  refreshTick: number;
-  lastEvent: { kind: string; artifactId: string } | null;
+  refreshTick?: number;
+  lastEvent?: { kind: string; artifactId: string } | null;
   initialArtifactId?: string | null;
   /** Filter used when opening from a card — attached as `taskId` on every list request. */
   initialTaskId?: string | null;
-  onOpenSource(target: SourceTarget): void;
-  onClose(): void;
+  onOpenSource?: (target: SourceTarget) => void;
+  onClose?: () => void;
   /** Event -> reload debounce (ms). Defaults to `ARTIFACTS_EVENT_DEBOUNCE_MS`. */
   debounceMs?: number;
 };
@@ -41,13 +44,16 @@ export const ARTIFACTS_EVENT_DEBOUNCE_MS = 300;
  */
 export default function ArtifactsModal({
   channelId,
-  npcs,
-  refreshTick,
-  lastEvent,
+  channels,
+  onSelectChannel,
+  embedded = false,
+  npcs = [],
+  refreshTick = 0,
+  lastEvent = null,
   initialArtifactId = null,
   initialTaskId = null,
-  onOpenSource,
-  onClose,
+  onOpenSource = () => {},
+  onClose = () => {},
   debounceMs = ARTIFACTS_EVENT_DEBOUNCE_MS,
 }: ArtifactsModalProps) {
   const t = useT();
@@ -153,33 +159,53 @@ export default function ArtifactsModal({
 
   const gate = error?.status === 409 ? "gateway" : error?.status === 428 ? "upgrade" : null;
 
-  return (
-    // Must float above the kanban modal (z-50) when opened from a kanban card's artifacts section.
+  const innerContent = (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
-      onClick={requestModalClose}
+      role={embedded ? "region" : "dialog"}
+      aria-modal={embedded ? undefined : "true"}
+      aria-label={embedded ? t("artifacts.title") : undefined}
+      aria-labelledby={embedded ? undefined : "artifacts-modal-title"}
+      className={
+        embedded
+          ? "bg-bg border border-border rounded-xl shadow-xs w-full h-full flex flex-col overflow-hidden"
+          : "bg-bg border border-border rounded-xl shadow-2xl w-[96vw] max-w-[1400px] h-[88dvh] flex flex-col"
+      }
+      onClick={(e) => e.stopPropagation()}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="artifacts-modal-title"
-        className="bg-bg border border-border rounded-xl shadow-2xl w-[96vw] max-w-[1400px] h-[88dvh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-2 px-5 py-3 border-b border-border flex-shrink-0">
-          <h2 id="artifacts-modal-title" className="text-sm font-bold flex items-center gap-1.5">
-            <Package className="w-4 h-4" />
-            {t("artifacts.title")}
-          </h2>
-          <button
-            type="button"
-            onClick={requestModalClose}
-            aria-label={t("common.close")}
-            className="ml-1 text-text-muted hover:text-text"
-          >
-            <X className="w-5 h-5" />
-          </button>
+      <div className="flex items-center justify-between gap-2 px-5 py-3 border-b border-border flex-shrink-0">
+        <h2 id="artifacts-modal-title" className="text-sm font-bold flex items-center gap-1.5">
+          <Package className="w-4 h-4" />
+          {t("artifacts.title")}
+        </h2>
+        <div className="flex items-center gap-1.5 text-xs">
+          {channels && channels.length > 0 && onSelectChannel && (
+            <div className="flex items-center gap-1 bg-surface-raised px-2.5 py-1 rounded-md border border-border">
+              <span className="text-text-muted font-medium">{t("nav.channels")}:</span>
+              <select
+                value={channelId}
+                onChange={(e) => onSelectChannel(e.target.value)}
+                className="bg-transparent text-text font-semibold focus:outline-none cursor-pointer text-xs"
+              >
+                {channels.map((ch) => (
+                  <option key={ch.id} value={ch.id} className="bg-bg text-text">
+                    {ch.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {!embedded && (
+            <button
+              type="button"
+              onClick={requestModalClose}
+              aria-label={t("common.close")}
+              className="ml-1 text-text-muted hover:text-text"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
+      </div>
 
         {gate ? (
           <div className="flex-1 overflow-y-auto p-4">
@@ -283,6 +309,26 @@ export default function ArtifactsModal({
           </>
         )}
       </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="w-full h-full flex flex-col">
+        {innerContent}
+        <GateChecklistModal
+          blocker={checklistOpen ? gateBlocker.blocker : null}
+          onClose={() => setChecklistOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
+      onClick={requestModalClose}
+    >
+      {innerContent}
       <GateChecklistModal
         blocker={checklistOpen ? gateBlocker.blocker : null}
         onClose={() => setChecklistOpen(false)}

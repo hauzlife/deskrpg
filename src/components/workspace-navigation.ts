@@ -11,7 +11,14 @@
  * provider auth on its own, per profile. Clicking it doesn't connect to this product's flow and
  * misleads the user.
  */
-export type WorkspaceNavKey = "gateways" | "profiles" | "characters" | "channels" | "tasks";
+export type WorkspaceNavKey =
+  | "gateways"
+  | "profiles"
+  | "characters"
+  | "channels"
+  | "tasks"
+  | "artifacts"
+  | "meetings";
 
 export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }> = [
   { key: "characters", href: "/characters" },
@@ -19,6 +26,8 @@ export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }
   { key: "profiles", href: "/profiles" },
   { key: "channels", href: "/channels" },
   { key: "tasks", href: "/tasks" },
+  { key: "artifacts", href: "/artifacts" },
+  { key: "meetings", href: "/meetings" },
 ];
 
 /** The employees (Hermes profile) screen URL. Employee management happens only at `/profiles`. */

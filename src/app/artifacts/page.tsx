@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense } from "react";
-import KanbanBoardModal from "@/components/kanban/KanbanBoardModal";
+import ArtifactsModal from "@/components/artifacts/ArtifactsModal";
 import { useWorkspaceChannels } from "@/components/workspace/use-workspace-channels";
 import { useT } from "@/lib/i18n";
 
-export default function TasksPage() {
+export default function ArtifactsPage() {
   const t = useT();
   return (
     <Suspense
@@ -15,12 +15,12 @@ export default function TasksPage() {
         </div>
       }
     >
-      <TasksPageInner />
+      <ArtifactsPageInner />
     </Suspense>
   );
 }
 
-function TasksPageInner() {
+function ArtifactsPageInner() {
   const t = useT();
   const { channels, selectedChannelId, setSelectedChannelId, loading } = useWorkspaceChannels();
 
@@ -35,7 +35,7 @@ function TasksPageInner() {
   if (channels.length === 0) {
     return (
       <div className="theme-web workspace-page p-8">
-        <h1 className="text-2xl font-bold mb-4">{t("nav.tasks")}</h1>
+        <h1 className="text-2xl font-bold mb-4">{t("nav.artifacts")}</h1>
         <p className="text-text-muted">{t("channels.empty") || "No offices/channels found."}</p>
       </div>
     );
@@ -43,12 +43,11 @@ function TasksPageInner() {
 
   return (
     <div className="theme-web workspace-page p-4 flex flex-col flex-1 h-[calc(100vh-2rem)]">
-      <KanbanBoardModal
+      <ArtifactsModal
         channelId={selectedChannelId}
         channels={channels}
         onSelectChannel={setSelectedChannelId}
         embedded={true}
-        onClose={() => {}}
       />
     </div>
   );
