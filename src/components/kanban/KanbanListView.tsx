@@ -212,6 +212,9 @@ function Row({
           selectedTaskId === task.id ? "bg-surface-raised" : ""
         }`}
       >
+        <span className="shrink-0 font-mono text-[10px] font-bold text-text-secondary bg-surface-raised px-1 py-0.5 rounded border border-border">
+          {task.id}
+        </span>
         <span className="min-w-0 flex-1 truncate text-text">{task.title}</span>
 
         {waiting && (

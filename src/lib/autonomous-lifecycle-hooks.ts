@@ -1247,6 +1247,7 @@ export interface BlockerTriageResult {
     | 'session_cleaned'
     | 'quota_model_remediated'
     | 'owner_triage_dispatched'
+    | 'owner_triage_aggregated'
     | 'none';
   remediatedTaskId?: string;
   spawnedTaskId?: string;

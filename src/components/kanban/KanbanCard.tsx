@@ -403,7 +403,7 @@ export default function KanbanCard({
         className="w-full p-2.5 pr-9 text-left"
       >
         <div className="flex items-center gap-1.5 mb-1">
-          <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface-raised px-1 py-0.5 rounded tracking-wide">
+          <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface-raised px-1 py-0.5 rounded tracking-wide border border-border">
             {task.id}
           </span>
         </div>

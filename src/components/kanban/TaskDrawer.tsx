@@ -318,6 +318,13 @@ export default function TaskDrawer({
     >
       <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-border">
         <div className="min-w-0">
+          {task && (
+            <div className="mb-1">
+              <span className="font-mono text-xs font-bold text-text-secondary bg-surface-raised px-1.5 py-0.5 rounded tracking-wide border border-border">
+                {task.id}
+              </span>
+            </div>
+          )}
           <div className="font-bold text-sm text-text break-words">
             {task?.title ?? t("common.loading")}
           </div>

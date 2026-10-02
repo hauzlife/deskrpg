@@ -22,7 +22,7 @@ interface KanbanSidebarProps {
 
 export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: KanbanSidebarProps) {
   const t = useT();
-  const [selectedBoard, selectBoard] = useSelectedBoard(channelId);
+  const { selected: selectedBoard, select: selectBoard } = useSelectedBoard(channelId, []);
   const api = createKanbanApi(channelId, undefined, selectedBoard ?? undefined);
 
   const [status, setStatus] = useState<any>(null);
@@ -120,9 +120,16 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
               <KanbanTimeline
                 runs={visibleRuns}
                 window={timelineWindow}
+                preset="today"
+                onPresetChange={() => {}}
                 now={now}
+                truncated={false}
+                loading={runsLoading}
+                error={runsError}
                 onOpenTask={() => {}}
                 header={<KanbanMetricsPanel metrics={metrics} />}
+                targetDate={null}
+                links={[]}
               />
             )}
 
@@ -133,6 +140,8 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
                 npcs={[]}
                 now={now}
                 selectedTaskId={null}
+                collapsedGroups={viewState.collapsedGroups}
+                onToggleGroup={() => {}}
                 onOpen={() => {}}
                 childrenOf={new Map()}
                 parentsOf={new Map()}
