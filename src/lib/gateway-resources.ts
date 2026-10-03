@@ -75,16 +75,41 @@ export function decryptGatewayToken(payload: string) {
   if (version !== "v1" || !ivB64 || !tagB64 || !encryptedB64) {
     throw new Error("Invalid gateway token payload");
   }
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    getGatewayCipherKey(),
-    Buffer.from(ivB64, "base64url"),
-  );
-  decipher.setAuthTag(Buffer.from(tagB64, "base64url"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(encryptedB64, "base64url")),
-    decipher.final(),
-  ]).toString("utf8");
+
+  const primaryKey = getGatewayCipherKey();
+  const keysToTry: Buffer[] = [primaryKey];
+
+  if (process.env.INTERNAL_RPC_SECRET && process.env.JWT_SECRET) {
+    const jwtKey = crypto.createHash("sha256").update(process.env.JWT_SECRET).digest();
+    if (!jwtKey.equals(primaryKey)) {
+      keysToTry.push(jwtKey);
+    }
+  }
+  if (process.env.NODE_ENV !== "production") {
+    const devKey = crypto.createHash("sha256").update(DEV_JWT_SECRET).digest();
+    if (!devKey.equals(primaryKey)) {
+      keysToTry.push(devKey);
+    }
+  }
+
+  let lastError: unknown = null;
+  for (const key of keysToTry) {
+    try {
+      const decipher = crypto.createDecipheriv(
+        "aes-256-gcm",
+        key,
+        Buffer.from(ivB64, "base64url"),
+      );
+      decipher.setAuthTag(Buffer.from(tagB64, "base64url"));
+      return Buffer.concat([
+        decipher.update(Buffer.from(encryptedB64, "base64url")),
+        decipher.final(),
+      ]).toString("utf8");
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
 }
 
 function buildDefaultGatewayDisplayName(baseUrl: string) {
