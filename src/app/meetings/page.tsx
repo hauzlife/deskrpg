@@ -179,6 +179,12 @@ function MeetingsPageInner() {
             now={Date.now()}
             onOpenTask={handleOpenTask}
             onOpenMeeting={(meetingId) => setSelectedMeetingId(meetingId)}
+            defaultFilters={{
+              showMeetings: true,
+              showDone: false,
+              showBlocked: false,
+              showRunning: false,
+            }}
           />
         </div>
       </div>

@@ -32,6 +32,12 @@ export interface KanbanCalendarViewProps {
   now: number;
   onOpenTask: (taskId: string) => void;
   onOpenMeeting?: (meetingId: string) => void;
+  defaultFilters?: {
+    showDone?: boolean;
+    showMeetings?: boolean;
+    showBlocked?: boolean;
+    showRunning?: boolean;
+  };
 }
 
 const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -59,6 +65,7 @@ export default function KanbanCalendarView({
   now,
   onOpenTask,
   onOpenMeeting,
+  defaultFilters,
 }: KanbanCalendarViewProps) {
   const nowDate = useMemo(() => new Date(now), [now]);
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date(now));
@@ -66,10 +73,10 @@ export default function KanbanCalendarView({
   const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
 
   // Filter toggles
-  const [showDone, setShowDone] = useState(true);
-  const [showMeetings, setShowMeetings] = useState(true);
-  const [showBlocked, setShowBlocked] = useState(true);
-  const [showRunning, setShowRunning] = useState(true);
+  const [showDone, setShowDone] = useState(defaultFilters?.showDone ?? true);
+  const [showMeetings, setShowMeetings] = useState(defaultFilters?.showMeetings ?? true);
+  const [showBlocked, setShowBlocked] = useState(defaultFilters?.showBlocked ?? true);
+  const [showRunning, setShowRunning] = useState(defaultFilters?.showRunning ?? true);
 
   // Meetings data
   const [meetings, setMeetings] = useState<CalendarMeetingItem[]>([]);
