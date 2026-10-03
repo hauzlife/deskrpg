@@ -101,7 +101,7 @@ export default function RoomNoticeMessage({
     // An unknown kind — just content, like a regular NPC/system line.
     return (
       <div className="flex justify-start" data-room-notice="unknown">
-        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text">
           {name && <div className="text-caption font-semibold text-npc mb-0.5">{name}</div>}
           <div className="whitespace-pre-wrap break-words">{message.content}</div>
         </div>
@@ -114,7 +114,7 @@ export default function RoomNoticeMessage({
   if (notice.kind === "card_proposal") {
     return (
       <div className="flex justify-start" data-room-notice={notice.kind}>
-        <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary border border-border">
+        <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-body bg-surface-raised text-text border border-border">
           {name && <div className="text-caption font-semibold text-npc mb-0.5">{name}</div>}
           <CardProposalNotice
             notice={notice}
@@ -136,7 +136,7 @@ export default function RoomNoticeMessage({
         data-room-notice={notice.kind}
         data-status={notice.status}
       >
-        <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary border border-border">
+        <div className="max-w-[85%] w-full px-3 py-2 rounded-lg text-body bg-surface-raised text-text border border-border">
           {name && <div className="text-caption font-semibold text-npc mb-0.5">{name}</div>}
           <div className="flex items-center gap-1.5 flex-wrap text-caption text-text-muted mb-1">
             <span className="font-semibold">
@@ -177,7 +177,7 @@ export default function RoomNoticeMessage({
     const registered = notice.resolved;
     return (
       <div className="flex justify-start" data-room-notice={notice.kind}>
-        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary border border-border">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text border border-border">
           <div className="break-words">
             {t(notice.recommended ? "notice.meetingOutcome.recommended" : "notice.meetingOutcome", {
               topic: notice.topic,
@@ -210,7 +210,7 @@ export default function RoomNoticeMessage({
     // refresh and in other tabs.
     return (
       <div className="flex justify-start" data-room-notice={notice.kind}>
-        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary border border-border">
+        <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text border border-border">
           {name && <div className="text-caption font-semibold text-npc mb-0.5">{name}</div>}
           <div className="break-words">
             {t("notice.approvalRequested", {
@@ -240,7 +240,7 @@ export default function RoomNoticeMessage({
 
   return (
     <div className="flex justify-start" data-room-notice={notice.kind}>
-      <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text-secondary border border-border">
+      <div className="max-w-[85%] px-3 py-2 rounded-lg text-body bg-surface-raised text-text border border-border">
         {name && <div className="text-caption font-semibold text-npc mb-0.5">{name}</div>}
         <div className="break-words">{cardNoticeText(notice, t)}</div>
         {onOpenCard && (

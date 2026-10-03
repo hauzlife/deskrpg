@@ -446,3 +446,35 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
   border: 1px solid #30363d;
 }
+
+/* Dark Mode Game Header & Workspace Chrome */
+.dark .ui2-game-header,
+[data-theme="dark"] .ui2-game-header {
+  background: rgba(13, 17, 23, 0.95);
+  border-bottom: 1px solid #30363d;
+  color: #f0f6fc;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.dark .ui2-game-header h1,
+[data-theme="dark"] .ui2-game-header h1 {
+  color: #f0f6fc;
+}
+
+.dark .workspace-conversation-collapse,
+[data-theme="dark"] .workspace-conversation-collapse {
+  background: #161b22;
+  border-color: #30363d;
+  color: #c9d1d9;
+  box-shadow: -3px 3px 12px rgba(0, 0, 0, 0.4);
+}
+
+.dark .workspace-drawer-toggle,
+[data-theme="dark"] .workspace-drawer-toggle {
+  background: #161b22;
+  border-color: #30363d;
+  color: #c9d1d9;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+

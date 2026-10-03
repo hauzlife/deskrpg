@@ -133,7 +133,11 @@ function buildComponents(t: (key: string) => string): Components {
         const lang = className?.replace("language-", "") ?? "";
         return <CodeBlock lang={lang}>{children}</CodeBlock>;
       }
-      return <code className="bg-bg/60 px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
+      return (
+        <code className="bg-surface text-text border border-border/60 px-1 py-0.5 rounded text-xs font-mono">
+          {children}
+        </code>
+      );
     },
     pre: ({ children }) => <>{children}</>,
     hr: () => <hr className="border-border my-2" />,
@@ -179,7 +183,7 @@ export default function MarkdownContent({ content }: { content: string }) {
   const t = useT();
   const components = useMemo(() => buildComponents(t), [t]);
   return (
-    <div className="markdown-chat">
+    <div className="markdown-chat text-text">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={components}

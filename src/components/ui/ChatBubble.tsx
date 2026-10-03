@@ -64,7 +64,7 @@ export default function ChatBubble({
         data-streaming={streaming ? "true" : "false"}
         className={`
           max-w-[85%] px-3 py-2 rounded-lg text-body
-          ${isPlayer ? "bg-primary text-white" : "bg-surface-raised text-text-secondary"}
+          ${isPlayer ? "bg-primary text-white" : "bg-surface-raised text-text border border-border/50"}
         `
           .trim()
           .replace(/\s+/g, " ")}

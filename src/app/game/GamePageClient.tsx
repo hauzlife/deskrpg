@@ -3140,7 +3140,7 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
       )}
 
       {/* Top bar — floating over game */}
-      <div className="fixed top-0 left-0 right-0 z-10 px-4 py-2 ui2-game-header">
+      <div className="fixed top-0 left-0 right-0 z-10 px-4 py-2 ui2-game-header bg-surface/90 backdrop-blur border-b border-border text-text">
         <style jsx>{`
           .ui2-game-header {
             display: flex;

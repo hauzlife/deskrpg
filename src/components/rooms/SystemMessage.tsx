@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n";
+import MarkdownContent from "../ui/MarkdownContent";
 
 interface SystemMessageProps {
   /** JSON put in by the server — of the form `{"kind":"invited","names":[…]}`. */
@@ -41,9 +42,30 @@ export function systemMessageText(
 
 export default function SystemMessage({ content }: SystemMessageProps) {
   const t = useT();
+  const text = systemMessageText(content, t);
+  const isAlert =
+    content.includes("\n") ||
+    content.includes("**") ||
+    content.includes("[") ||
+    content.startsWith("🚨") ||
+    content.startsWith("✅") ||
+    content.startsWith("🔴") ||
+    content.startsWith("🟢") ||
+    content.startsWith("🟠");
+
+  if (isAlert) {
+    return (
+      <div className="my-1.5 flex justify-start" data-system-alert="true">
+        <div className="max-w-[90%] w-full px-3 py-2 rounded-lg text-body bg-surface-raised border border-border text-text shadow-sm">
+          <MarkdownContent content={text} />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="py-1 text-center text-[11px] text-text-dim">
-      {systemMessageText(content, t)}
+    <div className="py-1 text-center text-caption text-text-muted">
+      {text}
     </div>
   );
 }
