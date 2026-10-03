@@ -2597,6 +2597,7 @@ const ja: Record<string, string> = {
   "errors.passwordMismatch": "確認用のパスワードが一致しません",
   "errors.currentNewPasswordRequired": "現在のパスワードと新しいパスワードを入力してください",
   "errors.userNotFound": "ユーザーが見つかりません",
+  "errors.default_assignee_unavailable": "指定されたデフォルト担当者は現在利用できません",
   "errors.loginIdTaken": "そのログインIDは既に使われています",
   "errors.nicknameTaken": "その表示名は既に使われています",
   "errors.gatewayUrlRequired": "ゲートウェイURLが必要です",

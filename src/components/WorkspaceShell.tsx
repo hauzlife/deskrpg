@@ -17,6 +17,7 @@ import DeskRpgMark from "./DeskRpgMark";
 import OfficeBuilding from "./OfficeBuilding";
 import LocaleSwitcher from "./LocaleSwitcher";
 import LogoutButton from "./LogoutButton";
+import ThemeToggle from "./ThemeToggle";
 import { WORKSPACE_NAV } from "./workspace-navigation";
 import { useT } from "@/lib/i18n";
 
@@ -87,6 +88,10 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </Link>
           <LogoutButton />
           <LocaleSwitcher />
+          <ThemeToggle
+            showLabel
+            className="workspace-sidebar-action-link flex items-center gap-1.5"
+          />
           <Link href="/tasks" className="workspace-sidebar-action-link flex items-center gap-1.5">
             <KanbanSquare size={14} aria-hidden="true" />
             <span>{t("nav.tasks")}</span>

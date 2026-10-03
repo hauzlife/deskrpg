@@ -7,6 +7,17 @@
   --border-subtle: #e4e8df;
 }
 
+.dark .theme-game,
+.dark.theme-game,
+[data-theme="dark"] .theme-game {
+  --bg: #0d1117;
+  --bg-deep: #080b10;
+  --surface: #161b22;
+  --surface-raised: #21262d;
+  --border: #30363d;
+  --border-subtle: #21262d;
+}
+
 /* One header offset shared by the scene, conversation panel and meeting workspace. */
 .ui2-game {
   --game-header-height: 48px;

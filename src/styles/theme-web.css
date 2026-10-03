@@ -11,3 +11,15 @@
   --border: #d9d2c0;
   --border-subtle: #e4ddcc;
 }
+
+.dark .theme-web,
+.dark:root,
+.dark,
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-deep: #080b10;
+  --surface: #161b22;
+  --surface-raised: #21262d;
+  --border: #30363d;
+  --border-subtle: #21262d;
+}

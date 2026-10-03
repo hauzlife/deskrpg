@@ -29,3 +29,17 @@ test("changing shadow filter recompiles retained actor materials, while an uncha
   applyOfficeShadowFilter(scene, shadowMap, T.PCFSoftShadowMap);
   assert.equal(material.version, start + 2);
 });
+
+test("dark mode provides nocturnal moonlight, reduced exposure and dark outside background", () => {
+  const nightStudio = officeLighting("agency", 3, "dark");
+  assert.equal(nightStudio.sun, "#90b4e8");
+  assert.equal(nightStudio.outside, "#090c12");
+  assert.equal(nightStudio.exposure, 1.0);
+  assert.ok(nightStudio.sunIntensity < 2.0);
+  assert.ok(nightStudio.hemisphereIntensity < 1.0);
+
+  const nightStandard = officeLighting(undefined, undefined, "dark");
+  assert.equal(nightStandard.sun, "#90b4e8");
+  assert.equal(nightStandard.outside, "#090c12");
+  assert.equal(nightStandard.exposure, 0.98);
+});

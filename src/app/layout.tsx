@@ -67,8 +67,26 @@ export default async function RootLayout({
   const locale = await getRequestLocale();
 
   return (
-    <html lang={locale} className="h-full antialiased">
-      <body className="min-h-full flex flex-col">
+    <html lang={locale} className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                var theme = localStorage.getItem("deskrpg_theme");
+                if (theme === "dark" || (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+                  document.documentElement.classList.add("dark");
+                  document.documentElement.setAttribute("data-theme", "dark");
+                } else {
+                  document.documentElement.classList.remove("dark");
+                  document.documentElement.setAttribute("data-theme", "light");
+                }
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
+      <body className="min-h-full flex flex-col bg-bg text-text transition-colors duration-150">
         <Providers initialLocale={locale}>
           <WorkspaceShell>{children}</WorkspaceShell>
         </Providers>

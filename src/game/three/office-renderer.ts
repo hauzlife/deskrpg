@@ -51,6 +51,7 @@ import {
 import { resolveOfficeLook } from "./office-looks";
 import { isOfficeEnvironmentId } from "./office-environment-theme";
 import * as T from "three";
+import { EventBus } from "../EventBus";
 import { addOfficeDetails } from "./office-details";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createActor, round, sphere, cylinder } from "./characters";
@@ -152,6 +153,8 @@ export class OfficeRenderer {
   private sun = new T.DirectionalLight();
   private fill = new T.DirectionalLight();
   private sky = new T.HemisphereLight();
+  private themeMode: "light" | "dark" = "light";
+  private onThemeChange?: (mode: unknown) => void;
   private seats: Seat[] = [];
   private seatBadges = new Map<number, HTMLDivElement>();
   private camera = new T.PerspectiveCamera(38, 1, 0.1, 250);
@@ -245,7 +248,17 @@ export class OfficeRenderer {
     this.scene.environmentIntensity = 0.28;
     room.dispose();
     pmrem.dispose();
-    this.renderer.setClearColor(palettes.office.outside);
+    this.themeMode =
+      typeof document !== "undefined" && document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light";
+    this.renderer.setClearColor(this.themeMode === "dark" ? "#090c12" : palettes.office.outside);
+    this.onThemeChange = (mode: unknown) => {
+      if (mode === "dark" || mode === "light") {
+        this.setThemeMode(mode);
+      }
+    };
+    EventBus.on("theme:change", this.onThemeChange);
     this.renderer.domElement.setAttribute("aria-label", "DeskRPG 3D");
     if (showPerformanceHud(process.env.NODE_ENV, process.env.NEXT_PUBLIC_README_CAPTURE)) {
       this.statsLabel = document.createElement("output");
@@ -408,6 +421,46 @@ export class OfficeRenderer {
     this.theme = theme;
     this.lastMap = "";
     this.mapTimer = 0;
+  }
+  setThemeMode(mode: "light" | "dark") {
+    if (this.themeMode === mode) return;
+    this.themeMode = mode;
+    if (this.bridge) {
+      const map = this.bridge.map();
+      const studio = isCreativeStudioMap(map);
+      const lighting = officeLighting(
+        isOfficeEnvironmentId(map.environment) ? map.environment : undefined,
+        studio ? 3 : undefined,
+        this.themeMode,
+      );
+      this.sun.color.set(lighting.sun);
+      this.sun.intensity = lighting.sunIntensity;
+      this.sun.shadow.radius = lighting.shadowRadius;
+      this.sky.color.set(lighting.sky);
+      this.sky.groundColor.set(lighting.ground ?? "#8a8577");
+      this.sky.intensity = lighting.hemisphereIntensity;
+      this.fill.color.set(this.themeMode === "dark" ? "#1e2d48" : "#deebff");
+      this.fill.intensity = lighting.fillIntensity;
+      this.renderer.toneMappingExposure = lighting.exposure;
+      const trading = isTradingMap(map);
+      const publishing = isPublishingMap(map);
+      const tech = isTechStartupMap(map);
+      const p =
+        trading || publishing
+          ? { floor: "#c4bfb3", wall: "#e7e1d4", wood: "#c3aa82", outside: "#f2efe4" }
+          : tech
+            ? { floor: "#c6c8c7", wall: "#edf0ed", wood: "#c4ac89", outside: "#edf0e6" }
+            : studio
+              ? { floor: "#dfcdb0", wall: "#e5dfd2", wood: "#c9ae86", outside: "#f4f0e7" }
+              : isOfficeEnvironmentId(map.environment)
+                ? environmentPalettes[map.environment]
+                : palettes[this.theme];
+      this.renderer.setClearColor(
+        this.themeMode === "dark" ? (lighting.outside ?? "#090c12") : p.outside,
+      );
+    } else {
+      this.renderer.setClearColor(this.themeMode === "dark" ? "#090c12" : palettes.office.outside);
+    }
   }
   focus() {
     if (this.meetingCamera.active) return;
@@ -868,15 +921,16 @@ export class OfficeRenderer {
     const lighting = officeLighting(
       isOfficeEnvironmentId(map.environment) ? map.environment : undefined,
       studio ? 3 : undefined,
+      this.themeMode,
     );
     this.sun.color.set(lighting.sun);
     this.sun.intensity = lighting.sunIntensity;
     applyOfficeShadowFilter(this.scene, this.renderer.shadowMap, lighting.shadowMapType);
     this.sun.shadow.radius = lighting.shadowRadius;
     this.sky.color.set(lighting.sky);
-    this.sky.groundColor.set("#8a8577");
+    this.sky.groundColor.set(lighting.ground ?? "#8a8577");
     this.sky.intensity = lighting.hemisphereIntensity;
-    this.fill.color.set("#deebff");
+    this.fill.color.set(this.themeMode === "dark" ? "#1e2d48" : "#deebff");
     this.fill.intensity = lighting.fillIntensity;
     this.renderer.toneMappingExposure = lighting.exposure;
     const cx = map.cols / 2,
@@ -894,7 +948,9 @@ export class OfficeRenderer {
       bottom: -extent,
     });
     this.sun.shadow.camera.updateProjectionMatrix();
-    this.renderer.setClearColor(p.outside);
+    this.renderer.setClearColor(
+      this.themeMode === "dark" ? (lighting.outside ?? "#090c12") : p.outside,
+    );
     const floorGrain =
       isOfficeEnvironmentId(map.environment) && !tech && !trading ? surfaceTexture("wood") : null;
     if (floorGrain) floorGrain.repeat.set(map.cols / 3, map.rows / 2);
@@ -1787,6 +1843,10 @@ export class OfficeRenderer {
 
   dispose() {
     this.exitMeeting();
+    if (this.onThemeChange) {
+      EventBus.off("theme:change", this.onThemeChange);
+      this.onThemeChange = undefined;
+    }
     this.meetingCamera.dispose();
     this.onMeetingCameraChange = undefined;
     this.cancelBenchmark("Renderer disposed");

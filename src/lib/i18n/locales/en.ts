@@ -2581,6 +2581,7 @@ const en: Record<string, string> = {
   "errors.passwordMismatch": "The confirmation does not match the new password",
   "errors.currentNewPasswordRequired": "Enter both the current and the new password",
   "errors.userNotFound": "User not found",
+  "errors.default_assignee_unavailable": "The designated default assignee is currently unavailable",
   "errors.loginIdTaken": "That login ID is already taken",
   "errors.nicknameTaken": "That display name is already taken",
   "errors.gatewayUrlRequired": "Gateway URL is required",

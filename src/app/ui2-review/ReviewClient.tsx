@@ -38,6 +38,7 @@ import { furnitureSeats } from "@/game/three/seating";
 import { findPath, clearSegment } from "@/game/navigation";
 import type { ActorSnapshot, OfficeBridge } from "@/game/three/bridge";
 import type { BenchmarkReport, FrameMetrics } from "@/game/three/frame-benchmark";
+import ThemeToggle from "@/components/ThemeToggle";
 import "@/game/three/office.css";
 
 import {
@@ -523,11 +524,16 @@ export default function ReviewClient() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-text-muted mt-1.5 max-w-2xl">
-            Visual inspection sandbox for office environments, spatial camera framing, actor layouts, and real-time GPU rendering telemetry.
+            Visual inspection sandbox for office environments, spatial camera framing, actor
+            layouts, and real-time GPU rendering telemetry.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle
+            showLabel
+            className="px-3 py-1.5 rounded-lg bg-surface border border-border shadow-xs flex items-center gap-2 text-xs"
+          />
           <div className="px-3 py-1.5 rounded-lg bg-surface border border-border shadow-xs flex items-center gap-2 text-xs">
             <span
               className={`w-2 h-2 rounded-full ${metrics?.assetsReady ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500 animate-pulse"}`}
@@ -612,13 +618,14 @@ export default function ReviewClient() {
               }}
             >
               <option value="">Restore Scene Camera</option>
-              {(environment === "agency" ? studioReviewRooms : (OFFICE_ROOMS[environment] ?? [])).map(
-                (room) => (
-                  <option key={room.id} value={room.id}>
-                    {roomLabel(room.label, "en")}
-                  </option>
-                ),
-              )}
+              {(environment === "agency"
+                ? studioReviewRooms
+                : (OFFICE_ROOMS[environment] ?? [])
+              ).map((room) => (
+                <option key={room.id} value={room.id}>
+                  {roomLabel(room.label, "en")}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -680,7 +687,11 @@ export default function ReviewClient() {
             onClick={() => {
               setSmallViewport((v) => !v);
               setReferenceViewport(false);
-              setStatus(smallViewport ? "Default responsive container restored." : "Renderer container resized to 390×600 mobile check.");
+              setStatus(
+                smallViewport
+                  ? "Default responsive container restored."
+                  : "Renderer container resized to 390×600 mobile check.",
+              );
             }}
           >
             {smallViewport ? <Monitor size={16} /> : <Smartphone size={16} />}
@@ -705,9 +716,7 @@ export default function ReviewClient() {
             <Layers size={12} className="text-blue-500" />
             Draw Calls
           </span>
-          <span className="text-lg font-bold text-text">
-            {metrics?.drawCalls ?? "—"}
-          </span>
+          <span className="text-lg font-bold text-text">{metrics?.drawCalls ?? "—"}</span>
         </div>
 
         <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
@@ -725,9 +734,7 @@ export default function ReviewClient() {
             <Boxes size={12} className="text-amber-500" />
             Geometries
           </span>
-          <span className="text-lg font-bold text-text">
-            {metrics?.geometries ?? "—"}
-          </span>
+          <span className="text-lg font-bold text-text">{metrics?.geometries ?? "—"}</span>
         </div>
 
         <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
@@ -735,9 +742,7 @@ export default function ReviewClient() {
             <Activity size={12} className="text-indigo-500" />
             Textures
           </span>
-          <span className="text-lg font-bold text-text">
-            {metrics?.textures ?? "—"}
-          </span>
+          <span className="text-lg font-bold text-text">{metrics?.textures ?? "—"}</span>
         </div>
 
         <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
@@ -782,7 +787,8 @@ export default function ReviewClient() {
               Engine Diagnostics & Performance Benchmarks
             </h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Execute standardized frame rate probes, asset transitions, and multi-scene stress tests.
+              Execute standardized frame rate probes, asset transitions, and multi-scene stress
+              tests.
             </p>
           </div>
 
@@ -835,7 +841,8 @@ export default function ReviewClient() {
           <div className="p-4 rounded-lg bg-surface-raised border border-border flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs font-semibold">
               <span className="text-text">
-                Status: <span className="text-primary uppercase">{matrix.status}</span> ({matrix.index}/{matrix.total})
+                Status: <span className="text-primary uppercase">{matrix.status}</span> (
+                {matrix.index}/{matrix.total})
               </span>
               <span className="text-text-muted">
                 {matrix.environment} • {matrix.scene}
@@ -843,7 +850,9 @@ export default function ReviewClient() {
             </div>
             {matrix.results.at(-1) && (
               <div className="text-xs text-text-secondary bg-surface p-2.5 rounded-md border border-border flex items-center justify-between">
-                <span>Last Result: {matrix.results.at(-1)!.environment} / {matrix.results.at(-1)!.scene}</span>
+                <span>
+                  Last Result: {matrix.results.at(-1)!.environment} / {matrix.results.at(-1)!.scene}
+                </span>
                 <span className="font-bold text-emerald-500">
                   {matrix.results.at(-1)!.medianFps?.toFixed(1) ?? "—"} Median FPS
                 </span>

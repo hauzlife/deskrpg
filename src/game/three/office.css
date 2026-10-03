@@ -381,3 +381,68 @@
   flex-shrink: 0;
   box-shadow: none;
 }
+
+/* Dark Mode 3D Game Enhancements */
+.dark .office-presentation,
+[data-theme="dark"] .office-presentation {
+  background: #0b0e14;
+}
+
+.dark .office-actor-name,
+[data-theme="dark"] .office-actor-name {
+  background: #161b22;
+  color: #f0f6fc;
+  border-color: #30363d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.dark .office-actor-bubble,
+[data-theme="dark"] .office-actor-bubble {
+  background: rgba(22, 27, 34, 0.94);
+  color: #e6edf3;
+  border-color: #30363d;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.dark .office-actor-bubble[data-active="true"],
+[data-theme="dark"] .office-actor-bubble[data-active="true"] {
+  border-color: #388bfd;
+}
+
+.dark .office-camera-tools,
+[data-theme="dark"] .office-camera-tools {
+  background: #161b22;
+  border-color: #30363d;
+  color: #c9d1d9;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+.dark .office-camera-tools button,
+.dark .office-camera-tools a,
+[data-theme="dark"] .office-camera-tools button,
+[data-theme="dark"] .office-camera-tools a {
+  color: #c9d1d9;
+}
+
+.dark .office-camera-tools button:hover,
+.dark .office-camera-tools a:hover,
+[data-theme="dark"] .office-camera-tools button:hover,
+[data-theme="dark"] .office-camera-tools a:hover {
+  background: #21262d;
+  color: #ffffff;
+}
+
+.dark .office-movement-hint,
+[data-theme="dark"] .office-movement-hint {
+  background: rgba(22, 27, 34, 0.9);
+  color: #8b949e;
+  border-color: #30363d;
+}
+
+.dark .office-speech-rail,
+[data-theme="dark"] .office-speech-rail {
+  background: rgba(22, 27, 34, 0.92);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid #30363d;
+}

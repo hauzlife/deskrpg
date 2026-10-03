@@ -2475,6 +2475,7 @@ const zh: Record<string, string> = {
   "errors.passwordMismatch": "确认密码与新密码不一致",
   "errors.currentNewPasswordRequired": "请输入当前密码和新密码",
   "errors.userNotFound": "找不到该用户",
+  "errors.default_assignee_unavailable": "指定的默认经办人目前不可用",
   "errors.loginIdTaken": "该登录 ID 已被使用",
   "errors.nicknameTaken": "该显示名称已被使用",
   "errors.gatewayUrlRequired": "需要网关 URL",

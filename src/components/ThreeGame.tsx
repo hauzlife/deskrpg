@@ -21,6 +21,7 @@ import { insideMeetingSpace } from "@/game/meeting-space";
 import type { MeetingSpeaker } from "@/game/three/meeting-camera";
 import { loadMeetingCameraPrefs, type MeetingCameraPrefs } from "@/lib/meeting-camera-prefs";
 import type { Socket } from "socket.io-client";
+import ThemeToggle from "./ThemeToggle";
 import "@/game/three/office.css";
 
 export interface ThreeGameProps {
@@ -338,6 +339,10 @@ export default function ThreeGame(props: ThreeGameProps) {
             >
               <Minus size={17} />
             </button>
+            <ThemeToggle
+              className="grid place-items-center w-8 h-8 rounded hover:bg-black/5 dark:hover:bg-white/10"
+              size={16}
+            />
           </div>
           <div className="office-movement-hint" data-meeting={meetingCamera.active || undefined}>
             {meetingCamera.active ? t("meeting.rotationHint") : t("game.camera.movementHint")}

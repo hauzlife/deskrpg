@@ -229,10 +229,12 @@ export type ErrorCode =
   | "provider_needs_cli"
   | "toolset_not_found"
   | "toolset_has_no_providers"
-  | "config_write_failed";
+  | "config_write_failed"
+  | "default_assignee_unavailable";
 
 /** Every registered error code → translation key. The coverage guard scans this whole table. */
 export const ERROR_MESSAGE_KEYS: Record<ErrorCode, string> = {
+  default_assignee_unavailable: "errors.default_assignee_unavailable",
   skill_reference_edit_removed: "skills.error.skill_reference_edit_removed",
   skill_purge_removed: "skills.error.skill_purge_removed",
   skill_feature_unavailable: "skills.error.skill_feature_unavailable",

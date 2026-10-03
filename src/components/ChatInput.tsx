@@ -322,7 +322,7 @@ export default function ChatInput({
             isRecording
               ? "bg-danger text-white border-danger animate-pulse"
               : isTranscribing
-                ? "bg-surface-raised text-text-dim border-border cursor-wait"
+                ? "bg-surface-raised text-text-muted border-border cursor-wait"
                 : "bg-surface-raised text-text hover:bg-surface border-border"
           }`}
         >

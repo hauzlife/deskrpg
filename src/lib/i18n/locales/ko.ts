@@ -2568,6 +2568,7 @@ const ko: Record<string, string> = {
   "errors.passwordMismatch": "새 비밀번호 확인이 일치하지 않습니다",
   "errors.currentNewPasswordRequired": "현재 비밀번호와 새 비밀번호를 모두 입력해 주세요",
   "errors.userNotFound": "사용자를 찾을 수 없습니다",
+  "errors.default_assignee_unavailable": "지정된 기본 담당자를 현재 이용할 수 없습니다",
   "errors.loginIdTaken": "이미 사용 중인 로그인 ID입니다",
   "errors.nicknameTaken": "이미 사용 중인 표시 이름입니다",
   "errors.gatewayUrlRequired": "게이트웨이 URL이 필요합니다",
