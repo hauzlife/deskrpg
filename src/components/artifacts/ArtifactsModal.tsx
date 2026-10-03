@@ -113,7 +113,14 @@ export default function ArtifactsModal({
             }),
           );
           if (mine !== sequence.current) return;
-          const merged = results.flat().sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+          const seen = new Set<string>();
+          const merged: ArtifactSummary[] = [];
+          for (const art of results.flat().sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))) {
+            if (!seen.has(art.id)) {
+              seen.add(art.id);
+              merged.push(art);
+            }
+          }
           setItems(merged);
           setCursor("");
           setHasMore(false);

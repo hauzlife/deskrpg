@@ -3099,6 +3099,7 @@ const en: Record<string, string> = {
   // Kanban (T8)
   "kanban.title": "Kanban board",
   "kanban.open": "Kanban",
+  "kanban.project.allBoards": "All Boards",
   "kanban.project.pick": "Select project",
   "kanban.project.archivedGroup": "Archived",
   "kanban.project.showArchived": "Archived {count}",
@@ -3148,6 +3149,8 @@ const en: Record<string, string> = {
   "kanban.column.archived": "Archived",
   "kanban.view.board": "Board",
   "kanban.view.list": "List",
+  "kanban.view.calendar": "Calendar",
+  "kanban.view.calendar.hint": "Calendar view of deliverables and meetings",
   "kanban.view.switchLabel": "View mode",
   "kanban.view.groupBy": "Group by",
   "kanban.view.groupBy.none": "No grouping",

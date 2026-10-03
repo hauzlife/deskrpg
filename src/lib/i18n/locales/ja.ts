@@ -3130,6 +3130,7 @@ const ja: Record<string, string> = {
   // Kanban (T8)
   "kanban.title": "カンバンボード",
   "kanban.open": "カンバン",
+  "kanban.project.allBoards": "すべてのボード",
   "kanban.project.pick": "プロジェクトを選択",
   "kanban.project.archivedGroup": "アーカイブ済み",
   "kanban.project.showArchived": "アーカイブ済み {count}",
@@ -3178,6 +3179,8 @@ const ja: Record<string, string> = {
   "kanban.column.archived": "アーカイブ",
   "kanban.view.board": "ボード",
   "kanban.view.list": "リスト",
+  "kanban.view.calendar": "カレンダー",
+  "kanban.view.calendar.hint": "成果物と会議のカレンダービュー",
   "kanban.view.switchLabel": "表示方法",
   "kanban.view.groupBy": "グループ化",
   "kanban.view.groupBy.none": "グループ化しない",

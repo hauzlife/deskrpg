@@ -2975,6 +2975,7 @@ const zh: Record<string, string> = {
   // Kanban (T8)
   "kanban.title": "看板",
   "kanban.open": "看板",
+  "kanban.project.allBoards": "所有看板",
   "kanban.project.pick": "选择项目",
   "kanban.project.archivedGroup": "已归档",
   "kanban.project.showArchived": "已归档 {count}",
@@ -3022,6 +3023,8 @@ const zh: Record<string, string> = {
   "kanban.column.archived": "已归档",
   "kanban.view.board": "看板",
   "kanban.view.list": "列表",
+  "kanban.view.calendar": "日历",
+  "kanban.view.calendar.hint": "交付物与会议的日历视图",
   "kanban.view.switchLabel": "显示方式",
   "kanban.view.groupBy": "分组",
   "kanban.view.groupBy.none": "不分组",

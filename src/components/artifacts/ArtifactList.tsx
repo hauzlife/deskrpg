@@ -196,10 +196,10 @@ export default function ArtifactList({
         )}
         {filter.category === "media" ? (
           <div className="grid grid-cols-3 gap-2 p-3">
-            {items.map((a) =>
+            {items.map((a, idx) =>
               a.kind === "image" ? (
                 <button
-                  key={a.id}
+                  key={`${a.id}-${idx}`}
                   type="button"
                   title={a.title}
                   aria-label={a.title}
@@ -221,7 +221,7 @@ export default function ArtifactList({
               ) : (
                 // Audio/video have no thumbnail — icon tile + title.
                 <button
-                  key={a.id}
+                  key={`${a.id}-${idx}`}
                   type="button"
                   title={a.title}
                   aria-label={a.title}
@@ -240,8 +240,8 @@ export default function ArtifactList({
           </div>
         ) : (
           <ul>
-            {items.map((a) => (
-              <li key={a.id}>
+            {items.map((a, idx) => (
+              <li key={`${a.id}-${idx}`}>
                 <button
                   type="button"
                   onClick={() => onSelect(a.id)}
@@ -295,8 +295,8 @@ export default function ArtifactList({
               {t("artifacts.attachments.title")}
             </h3>
             <ul>
-              {cardAttachments.map((file) => (
-                <li key={`${file.boardSlug}:${file.id}`}>
+              {cardAttachments.map((file, idx) => (
+                <li key={`${file.boardSlug}:${file.id}:${idx}`}>
                   <a
                     href={cardAttachmentUrl(file)}
                     download={file.filename}

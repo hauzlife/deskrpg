@@ -406,6 +406,15 @@ export default function KanbanCard({
           <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface-raised px-1 py-0.5 rounded tracking-wide border border-border">
             {task.id}
           </span>
+          {(task._channelName || task._boardSlug) && (
+            <span
+              className="text-[9px] font-medium text-text-muted bg-surface-raised/70 border border-border/80 rounded px-1.5 py-0.5 max-w-[130px] truncate"
+              title={`${task._channelName ? `${task._channelName} · ` : ""}${task._boardSlug ?? ""}`}
+            >
+              {task._channelName ? `${task._channelName} · ` : ""}
+              {task._boardSlug ?? ""}
+            </span>
+          )}
           {(task.consecutive_failures ?? 0) >= 3 && (
             <span
               className="inline-flex items-center gap-1 text-[9px] font-bold text-danger bg-danger/10 border border-danger/30 rounded px-1.5 py-0.5 tracking-wide"

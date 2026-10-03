@@ -71,14 +71,11 @@ export function useSelectedBoard(channelId: string, options: ProjectOption[]) {
     setStored(typeof window === "undefined" ? null : readStored(channelId));
   }
 
-  // If the stored value isn't in the current list (the board disappeared, or it's another
-  // device's value), fall back to the default board **at the derivation step** — continuing to
-  // request a nonexistent board only yields 404s.
-  //
-  // The stored value itself is not cleared here. This is so a momentarily empty list (a fetch
-  // failure) doesn't permanently erase the user's choice — once that board reappears in the list,
-  // the selection comes right back. A board that's truly gone gets overwritten by the next choice.
-  const known = options.length === 0 || options.some((o) => o.boardSlug === stored);
+  // "all" is a valid choice only for the all-offices aggregation.
+  const isAll = channelId === "all" && (stored === "all" || stored === null);
+  const known =
+    isAll ||
+    (stored !== "all" && (options.length === 0 || options.some((o) => o.boardSlug === stored)));
 
   const select = useCallback(
     (boardSlug: string | null) => {
@@ -88,7 +85,11 @@ export function useSelectedBoard(channelId: string, options: ProjectOption[]) {
     [channelId],
   );
 
-  return { selected: known ? stored : null, select };
+  const effective = known
+    ? (stored ?? (channelId === "all" ? "all" : null))
+    : (channelId === "all" ? "all" : null);
+
+  return { selected: effective, select };
 }
 
 /** Our "done" statuses — mirrors `ARCHIVED_STATUSES` in `project-registry.ts` (server code the client can't import). */
@@ -111,15 +112,17 @@ export function ProjectPicker({
   canManage = false,
   onArchive,
   onReopen,
+  allowAll = false,
 }: {
   options: ProjectOption[];
-  /** null means the default (event-carrier) board */
+  /** null or "all" means all boards / default */
   selected: string | null;
   onSelect(boardSlug: string | null): void;
   /** Channel owner — the archive routes answer 403 to anyone else. */
   canManage?: boolean;
   onArchive?(projectId: string): Promise<void>;
   onReopen?(projectId: string): Promise<void>;
+  allowAll?: boolean;
 }) {
   const t = useT();
   const [showArchived, setShowArchived] = useState(false);
@@ -129,17 +132,18 @@ export function ProjectPicker({
 
   const active = options.filter((o) => !isArchivedProject(o));
   const archivedCount = options.length - active.length;
-  if (options.length < 2 || active.length === 0) return null;
+  if ((!allowAll && options.length < 2) || (options.length === 0 && !allowAll)) return null;
 
   const fallback = active.find((o) => o.isEventCarrier) ?? active[0];
-  const value = selected ?? fallback.boardSlug;
-  const current = options.find((o) => o.boardSlug === value) ?? fallback;
+  const isAllSelected = allowAll && (selected === "all" || selected === null);
+  const value = isAllSelected ? "all" : (selected ?? fallback?.boardSlug);
+  const current = options.find((o) => o.boardSlug === value) ?? (isAllSelected ? undefined : fallback);
   const visible = options.filter(
     (o) => !isArchivedProject(o) || showArchived || o.boardSlug === value,
   );
   const listedActive = visible.filter((o) => !isArchivedProject(o));
   const listedArchived = visible.filter(isArchivedProject);
-  const currentArchived = isArchivedProject(current);
+  const currentArchived = current ? isArchivedProject(current) : false;
 
   const run = async (action: () => Promise<void>, failureKey: string) => {
     setBusy(true);
@@ -155,7 +159,7 @@ export function ProjectPicker({
   };
 
   const renderOption = (option: ProjectOption) => (
-    <option key={option.boardSlug} value={option.boardSlug}>
+    <option key={option.boardSlug} value={option.boardSlug} className="bg-bg text-text">
       {option.name ?? option.boardSlug}
     </option>
   );
@@ -172,10 +176,15 @@ export function ProjectPicker({
             const next = e.target.value;
             setConfirming(false);
             setError(null);
-            onSelect(next === fallback.boardSlug ? null : next);
+            onSelect(next);
           }}
           className="bg-surface-raised text-text-primary rounded-md px-2 py-1 max-w-[180px] truncate"
         >
+          {allowAll && (
+            <option value="all" className="bg-bg text-text font-semibold">
+              {t("kanban.project.allBoards") || "All Boards"}
+            </option>
+          )}
           {listedActive.map(renderOption)}
           {listedArchived.length > 0 ? (
             <optgroup label={t("kanban.project.archivedGroup")}>
@@ -198,7 +207,7 @@ export function ProjectPicker({
           {t("kanban.project.showArchived", { count: archivedCount })}
         </button>
       ) : null}
-      {canManage && currentArchived && onReopen ? (
+      {canManage && current && currentArchived && onReopen ? (
         <button
           type="button"
           data-project-reopen
@@ -209,7 +218,7 @@ export function ProjectPicker({
           {t("kanban.project.reopen")}
         </button>
       ) : null}
-      {canManage && !currentArchived && active.length > 1 && onArchive ? (
+      {canManage && current && !currentArchived && active.length > 1 && onArchive ? (
         confirming ? (
           <span className="flex items-center gap-1">
             <span>{t("kanban.project.archiveConfirm")}</span>

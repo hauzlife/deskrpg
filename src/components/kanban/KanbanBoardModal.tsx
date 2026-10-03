@@ -190,10 +190,11 @@ export default function KanbanBoardModal({
   const [canManageProjects, setCanManageProjects] = useState(false);
   const [projectsTick, setProjectsTick] = useState(0);
   const { selected: selectedBoard, select: selectBoard } = useSelectedBoard(channelId, projects);
+  const effectiveBoardSlug = selectedBoard === "all" ? undefined : (selectedBoard ?? undefined);
   // When the board changes, a new api is created, and the loading effect below refetches for that board.
   const api = useMemo(
-    () => createKanbanApi(channelId, undefined, selectedBoard ?? undefined),
-    [channelId, selectedBoard],
+    () => createKanbanApi(channelId, undefined, effectiveBoardSlug),
+    [channelId, effectiveBoardSlug],
   );
   const [status, setStatus] = useState<AutomationStatus | null>(null);
   const [board, setBoard] = useState<BoardResponse | null>(null);
@@ -368,27 +369,84 @@ export default function KanbanBoardModal({
     const operation = (async (): Promise<ReloadResult> => {
       if (channelId === "all" && channels && channels.length > 0) {
         try {
+          try {
+            const primaryStatus = await createKanbanApi(channels[0].id).status();
+            if (current()) setStatus(primaryStatus);
+          } catch {
+            if (current()) setStatus(null);
+          }
+
+          let fetchTargets: Array<{ channel: { id: string; name: string }; boardSlug?: string }> = [];
+
+          if (selectedBoard && selectedBoard !== "all") {
+            // Specific board selected in "all" offices mode: query each channel for this board
+            fetchTargets = channels.map((ch) => ({ channel: ch, boardSlug: selectedBoard }));
+          } else {
+            // "all" boards selected in "all" offices mode: discover each unique board once
+            const channelProjects = await Promise.all(
+              channels.map(async (ch) => {
+                try {
+                  const data = await createKanbanApi(ch.id).projects();
+                  return {
+                    channel: ch,
+                    projects: Array.isArray(data?.projects) ? data.projects : [],
+                  };
+                } catch {
+                  return { channel: ch, projects: [] };
+                }
+              }),
+            );
+
+            const seenSlugs = new Set<string>();
+            for (const cp of channelProjects) {
+              if (cp.projects.length === 0) {
+                fetchTargets.push({ channel: cp.channel, boardSlug: undefined });
+              } else {
+                for (const proj of cp.projects) {
+                  if (!seenSlugs.has(proj.boardSlug)) {
+                    seenSlugs.add(proj.boardSlug);
+                    fetchTargets.push({ channel: cp.channel, boardSlug: proj.boardSlug });
+                  }
+                }
+              }
+            }
+          }
+
+          let firstError: unknown = null;
           const results = await Promise.all(
-            channels.map(async (ch) => {
+            fetchTargets.map(async ({ channel: ch, boardSlug: bSlug }) => {
               try {
-                const chApi = createKanbanApi(ch.id, undefined, selectedBoard ?? undefined);
+                const chApi = createKanbanApi(ch.id, undefined, bSlug);
                 const data = await chApi.board(includeArchived);
-                return { channel: ch, data };
-              } catch {
+                return {
+                  channel: ch,
+                  boardSlug: bSlug ?? (data as any)?.slug ?? undefined,
+                  data,
+                };
+              } catch (err) {
+                if (!firstError) firstError = err;
                 return null;
               }
             }),
           );
           if (!current()) return { kind: "superseded" };
           const valid = results.filter((r): r is NonNullable<typeof r> => r !== null);
+          if (valid.length === 0 && fetchTargets.length > 0) {
+            const failure = toFailure(firstError);
+            setBoard(null);
+            setBoardChannelId(null);
+            setBlocker(classifyBoardFailure(failure));
+            return { kind: "failed" };
+          }
           const columnMap = new Map<string, KanbanTask[]>();
           const tenantsSet = new Set<string>();
           const assigneesSet = new Set<string>();
           const npcsMap = new Map<string, (typeof valid)[0]["data"]["npcs"][number]>();
           let latestEventId: string | null = null;
           let latestNow: BoardResponse["now"] = 0;
+          const seenTaskIds = new Set<string>();
 
-          for (const { channel: ch, data } of valid) {
+          for (const { channel: ch, boardSlug: bSlug, data } of valid) {
             if (!data?.columns) continue;
             latestEventId = data.latest_event_id || latestEventId;
             latestNow = data.now || latestNow;
@@ -405,12 +463,16 @@ export default function KanbanBoardModal({
               if (!columnMap.has(col.name)) {
                 columnMap.set(col.name, []);
               }
-              const tagged = (col.tasks || []).map((task) => ({
-                ...task,
-                _channelId: ch.id,
-                _channelName: ch.name,
-              }));
-              columnMap.get(col.name)!.push(...tagged);
+              for (const task of col.tasks || []) {
+                if (seenTaskIds.has(task.id)) continue;
+                seenTaskIds.add(task.id);
+                columnMap.get(col.name)!.push({
+                  ...task,
+                  _channelId: ch.id,
+                  _channelName: ch.name,
+                  _boardSlug: bSlug ?? task._boardSlug ?? (task as any).board_slug,
+                });
+              }
             }
           }
 
@@ -458,6 +520,99 @@ export default function KanbanBoardModal({
         // The board can still open without a status summary — only the warning badge is left empty.
         if (current()) setStatus(null);
       }
+
+      if (selectedBoard === "all") {
+        try {
+          const projsData = await createKanbanApi(channelId).projects();
+          const pList = Array.isArray(projsData?.projects) ? projsData.projects : [];
+          const slugs: Array<string | undefined> =
+            pList.length > 0 ? pList.map((p) => p.boardSlug) : [undefined];
+          let singleFirstError: unknown = null;
+          const results = await Promise.all(
+            slugs.map(async (bSlug) => {
+              try {
+                const bApi = createKanbanApi(channelId, undefined, bSlug);
+                const data = await bApi.board(includeArchived);
+                return { boardSlug: bSlug, data };
+              } catch (err) {
+                if (!singleFirstError) singleFirstError = err;
+                return null;
+              }
+            }),
+          );
+          if (!current()) return { kind: "superseded" };
+          const valid = results.filter((r): r is NonNullable<typeof r> => r !== null);
+          if (valid.length === 0 && slugs.length > 0) {
+            const failure = toFailure(singleFirstError);
+            setBoard(null);
+            setBoardChannelId(null);
+            setBlocker(classifyBoardFailure(failure));
+            return { kind: "failed" };
+          }
+          const columnMap = new Map<string, KanbanTask[]>();
+          const tenantsSet = new Set<string>();
+          const assigneesSet = new Set<string>();
+          const npcsMap = new Map<string, (typeof valid)[0]["data"]["npcs"][number]>();
+          let latestEventId: string | null = null;
+          let latestNow: BoardResponse["now"] = 0;
+          const seenTaskIds = new Set<string>();
+
+          for (const { boardSlug: bSlug, data } of valid) {
+            if (!data?.columns) continue;
+            latestEventId = data.latest_event_id || latestEventId;
+            latestNow = data.now || latestNow;
+            if (Array.isArray(data.tenants)) {
+              for (const t of data.tenants) tenantsSet.add(t);
+            }
+            if (Array.isArray(data.assignees)) {
+              for (const a of data.assignees) assigneesSet.add(a);
+            }
+            if (Array.isArray(data.npcs)) {
+              for (const n of data.npcs) npcsMap.set(n.npcId, n);
+            }
+            for (const col of data.columns) {
+              if (!columnMap.has(col.name)) {
+                columnMap.set(col.name, []);
+              }
+              for (const task of col.tasks || []) {
+                if (seenTaskIds.has(task.id)) continue;
+                seenTaskIds.add(task.id);
+                columnMap.get(col.name)!.push({
+                  ...task,
+                  _channelId: channelId,
+                  _boardSlug: bSlug ?? task._boardSlug,
+                });
+              }
+            }
+          }
+
+          const mergedBoard: BoardResponse = {
+            columns: Array.from(columnMap.entries()).map(([name, tasks]) => ({
+              name,
+              tasks,
+            })),
+            tenants: Array.from(tenantsSet),
+            assignees: Array.from(assigneesSet),
+            latest_event_id: latestEventId,
+            now: latestNow,
+            npcs: Array.from(npcsMap.values()),
+          };
+          setBoard(mergedBoard);
+          setMove((move) =>
+            move.phase === "error" && sequence > move.shownAt ? { phase: "idle" } : move,
+          );
+          setBoardChannelId(channelId);
+          setBlocker(null);
+          setChecklist(null);
+          return { kind: "applied", board: mergedBoard };
+        } catch {
+          if (!current()) return { kind: "superseded" };
+          return { kind: "failed" };
+        } finally {
+          if (current()) setLoading(false);
+        }
+      }
+
       try {
         const data = await api.board(includeArchived);
         if (!current()) return { kind: "superseded" };
@@ -519,6 +674,19 @@ export default function KanbanBoardModal({
   );
   const hidden = useMemo(() => hiddenCards(currentBoard?.columns), [currentBoard]);
   const allTasks = useMemo(() => flattenTasks(columns), [columns]);
+  const selectedTask = useMemo(
+    () => allTasks.find((t) => t.id === selectedTaskId),
+    [allTasks, selectedTaskId],
+  );
+  const taskChannelId =
+    selectedTask?._channelId ?? (channelId === "all" ? channels?.[0]?.id : channelId);
+  const rawTaskBoardSlug = selectedTask?._boardSlug ?? effectiveBoardSlug;
+  const taskBoardSlug = rawTaskBoardSlug === "all" ? undefined : rawTaskBoardSlug;
+  const drawerApi = useMemo(() => {
+    if (!taskChannelId || taskChannelId === "all") return api;
+    return createKanbanApi(taskChannelId, undefined, taskBoardSlug);
+  }, [taskChannelId, taskBoardSlug, api]);
+
   const listGroups = useTaskGroups(allTasks, viewState, {
     tenants: currentBoard?.tenants,
     assignees: currentBoard?.assignees,
@@ -562,7 +730,16 @@ export default function KanbanBoardModal({
       });
       if (links.has(taskId)) return;
       setLoadingChildren((prev) => new Set(prev).add(taskId));
-      void api
+      const targetTask = allTasks.find((candidate) => candidate.id === taskId);
+      const targetChannelId =
+        targetTask?._channelId ?? (channelId === "all" ? channels?.[0]?.id : channelId);
+      const rawTargetBoardSlug = targetTask?._boardSlug ?? effectiveBoardSlug;
+      const targetBoardSlug = rawTargetBoardSlug === "all" ? undefined : rawTargetBoardSlug;
+      const expandApi =
+        targetChannelId && targetChannelId !== "all"
+          ? createKanbanApi(targetChannelId, undefined, targetBoardSlug)
+          : api;
+      void expandApi
         .taskDetail(taskId)
         .then((detail) => {
           setLinks((prev) => new Map(prev).set(taskId, detail.links));
@@ -580,7 +757,7 @@ export default function KanbanBoardModal({
           });
         });
     },
-    [api, links],
+    [allTasks, api, channelId, channels, effectiveBoardSlug, links],
   );
 
   /**
@@ -816,7 +993,14 @@ export default function KanbanBoardModal({
       setMove({ phase: "pending", ...request });
       void (async () => {
         try {
-          await api.updateTask(task.id, { status: event.target });
+          const moveChannelId =
+            task._channelId ?? (channelId === "all" ? channels?.[0]?.id : channelId);
+          const moveBoardSlug = task._boardSlug ?? effectiveBoardSlug;
+          const moveApi =
+            moveChannelId && moveChannelId !== "all"
+              ? createKanbanApi(moveChannelId, undefined, moveBoardSlug)
+              : api;
+          await moveApi.updateTask(task.id, { status: event.target });
         } catch (err) {
           moveRequestPending.current = false;
           if (!mounted.current || currentApi.current !== api) return;
@@ -906,14 +1090,27 @@ export default function KanbanBoardModal({
     setEditorError(null);
     try {
       if (editor.mode === "create") {
-        const res = await api.createTask(body);
+        const createChannelId =
+          channelId === "all" ? (channels?.[0]?.id ?? "all") : channelId;
+        const createApi =
+          createChannelId !== "all"
+            ? createKanbanApi(createChannelId, undefined, effectiveBoardSlug)
+            : api;
+        const res = await createApi.createTask(body);
         if (res.warning) {
           setBoardWarning(res.warning);
           setCreationWarnings((prev) => ({ ...prev, [res.task.id]: res.warning as string }));
         }
         setSelectedTaskId(res.task.id);
       } else {
-        await api.updateTask(editor.task.id, body);
+        const editChannelId =
+          editor.task._channelId ?? (channelId === "all" ? channels?.[0]?.id : channelId);
+        const editBoardSlug = editor.task._boardSlug ?? effectiveBoardSlug;
+        const editApi =
+          editChannelId && editChannelId !== "all"
+            ? createKanbanApi(editChannelId, undefined, editBoardSlug)
+            : api;
+        await editApi.updateTask(editor.task.id, body);
         setDetailTick((n) => n + 1);
       }
       setEditor(null);
@@ -929,7 +1126,15 @@ export default function KanbanBoardModal({
   const handleDispatch = async () => {
     setDispatching(true);
     try {
-      await api.dispatch();
+      if (channelId === "all" && channels && channels.length > 0) {
+        await Promise.allSettled(
+          channels.map((ch) =>
+            createKanbanApi(ch.id, undefined, effectiveBoardSlug).dispatch(),
+          ),
+        );
+      } else {
+        await api.dispatch();
+      }
       await reload();
     } catch (err) {
       setBoardWarning(failureLine(toFailure(err)));
@@ -1040,6 +1245,7 @@ export default function KanbanBoardModal({
               canManage={canManageProjects}
               onArchive={archiveProject}
               onReopen={reopenProject}
+              allowAll={channelId === "all"}
             />
             <ProjectTargetDate
               project={openProject}
@@ -1264,7 +1470,7 @@ export default function KanbanBoardModal({
           {selectedTaskId && currentBoard && !blocker && (
             <TaskDrawer
               key={selectedTaskId}
-              api={api}
+              api={drawerApi}
               taskId={selectedTaskId}
               npcs={npcs}
               boardTasks={allTasks}

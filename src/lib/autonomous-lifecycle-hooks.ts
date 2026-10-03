@@ -50,24 +50,9 @@ export const CANONICAL_PROJECT_MAPPINGS: Record<string, ProjectMapping> = {
 };
 
 export function resolveHotTelegramProject(hintText?: string): ProjectMapping {
-  const lower = (hintText || "").toLowerCase();
-  if (
-    lower.includes("billing") ||
-    lower.includes("checkout") ||
-    lower.includes("payment") ||
-    lower.includes("rebeltransfer") ||
-    lower.includes("order") ||
-    lower.includes("pix")
-  ) {
-    return {
-      projectId: "p_c21aedb6",
-      primaryPath: "/Users/anonymous/Projects/hauzhouse/hot/hot-billing",
-      defaultWorkspaceKind: "worktree",
-    };
-  }
   return {
     projectId: "p_8c9879cd",
-    primaryPath: "/Users/anonymous/Projects/hauzhouse/hot/hot-traffic",
+    primaryPath: "/Users/anonymous/Projects/hauzhouse/hot-telegram",
     defaultWorkspaceKind: "worktree",
   };
 }

@@ -151,3 +151,20 @@ test("an archived selection offers reopening instead of archiving", async () => 
   assert.deepEqual(reopened, ["c"]);
   await f.cleanup();
 });
+
+test("allowAll renders 'All Boards' option and omits archive button when all is selected", async () => {
+  const f = await mount({
+    options: [project("a"), project("b")],
+    selected: "all",
+    allowAll: true,
+    canManage: true,
+  });
+  const select = f.host.querySelector("select");
+  assert.ok(select);
+  const options = Array.from(select.querySelectorAll("option")).map((o) => o.value);
+  assert.ok(options.includes("all"));
+  assert.equal(select.value, "all");
+  assert.ok(!f.host.querySelector("[data-project-archive]"));
+  assert.ok(!f.host.querySelector("[data-project-reopen]"));
+  await f.cleanup();
+});

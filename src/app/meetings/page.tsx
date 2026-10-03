@@ -110,12 +110,14 @@ function MeetingsPageInner() {
       return;
     }
     setLoadingTasks(true);
+    const effectiveBoardSlug =
+      selectedBoard === "all" ? undefined : (selectedBoard ?? undefined);
     try {
       if (selectedChannelId === "all") {
         const results = await Promise.all(
           channels.map(async (ch) => {
             try {
-              const api = createKanbanApi(ch.id, undefined, selectedBoard ?? undefined);
+              const api = createKanbanApi(ch.id, undefined, effectiveBoardSlug);
               const res = await api.board(true);
               return flattenTasks(orderColumns(res.columns, true)).map((t) => ({
                 ...t,
@@ -128,7 +130,7 @@ function MeetingsPageInner() {
         );
         setTasks(results.flat());
       } else {
-        const api = createKanbanApi(selectedChannelId, undefined, selectedBoard ?? undefined);
+        const api = createKanbanApi(selectedChannelId, undefined, effectiveBoardSlug);
         const res = await api.board(true);
         setTasks(flattenTasks(orderColumns(res.columns, true)));
       }

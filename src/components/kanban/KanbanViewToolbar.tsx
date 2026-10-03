@@ -75,7 +75,7 @@ export default function KanbanViewToolbar({
           label={t("kanban.view.calendar") || "Calendário"}
           onClick={() => onUpdate({ viewMode: "calendar" })}
           icon={<CalendarDays className="h-3.5 w-3.5" />}
-          hint="Visão temporal em calendário das entregas e reuniões"
+          hint={t("kanban.view.calendar.hint") || "Visão temporal em calendário das entregas e reuniões"}
         />
       </div>
 

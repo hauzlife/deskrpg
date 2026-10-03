@@ -229,6 +229,10 @@ export type KanbanTask = {
   last_heartbeat_at?: PluginTime;
   /** Failures in a row. On board cards since plugin 0.21.0 (`kanban_run_events`); always on card detail. */
   consecutive_failures?: number;
+  /** DeskRPG client-side metadata for multi-channel / multi-board views */
+  _channelId?: string;
+  _channelName?: string;
+  _boardSlug?: string;
 };
 
 /** Full shape including fields that only come from card detail (`GET /kanban/tasks/{id}`). */

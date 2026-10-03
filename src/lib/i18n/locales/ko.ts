@@ -3098,6 +3098,7 @@ const ko: Record<string, string> = {
   // Kanban (T8)
   "kanban.title": "칸반 보드",
   "kanban.open": "칸반",
+  "kanban.project.allBoards": "모든 보드",
   "kanban.project.pick": "프로젝트 선택",
   "kanban.project.archivedGroup": "보관됨",
   "kanban.project.showArchived": "보관됨 {count}",
@@ -3147,6 +3148,8 @@ const ko: Record<string, string> = {
   "kanban.column.archived": "보관됨",
   "kanban.view.board": "보드",
   "kanban.view.list": "목록",
+  "kanban.view.calendar": "캘린더",
+  "kanban.view.calendar.hint": "산출물 및 회의의 캘린더 보기",
   "kanban.view.switchLabel": "보기 방식",
   "kanban.view.groupBy": "묶기",
   "kanban.view.groupBy.none": "묶지 않기",

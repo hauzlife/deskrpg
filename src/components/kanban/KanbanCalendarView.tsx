@@ -85,7 +85,7 @@ export default function KanbanCalendarView({
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId || channelId === "all") return;
     fetch(`/api/meetings?channelId=${encodeURIComponent(channelId)}`)
       .then((r) => r.json())
       .then((data) => {
