@@ -48,7 +48,9 @@ export class HermesAdapter implements NpcAdapter {
         const name = typeof event.data.tool_name === "string" ? event.data.tool_name : "";
         options.onToolProgress?.(name, "");
         if (event.event === "tool.started") {
-          const toolInput = event.data.tool_input ?? event.data.args ?? event.data.preview ?? { invoked: true };
+          const toolInput = event.data.tool_input ??
+            event.data.args ??
+            event.data.preview ?? { invoked: true };
           trace?.onToolCall(name, toolInput);
         }
       }

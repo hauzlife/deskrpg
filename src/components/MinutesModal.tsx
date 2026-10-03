@@ -12,6 +12,7 @@ import {
   ClipboardCopy,
   ChevronDown,
   ChevronUp,
+  Sparkles,
 } from "lucide-react";
 import { normalizeMeetingMinutesRecord } from "@/lib/meeting-minutes";
 import MeetingOutcomeSection from "./meeting-room/MeetingOutcomeSection";
@@ -56,6 +57,35 @@ export default function MinutesModal({
   const [deleting, setDeleting] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [exportMenu, setExportMenu] = useState(false);
+  const [autoRegistering, setAutoRegistering] = useState(false);
+  const [autoRegisterFeedback, setAutoRegisterFeedback] = useState<string | null>(null);
+
+  const handleAutoRegister = useCallback(async () => {
+    if (!detail) return;
+    setAutoRegistering(true);
+    setAutoRegisterFeedback(null);
+    try {
+      const res = await fetch(`/api/meetings/${detail.id}/auto-register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        setAutoRegisterFeedback(
+          `✓ ${data.cardsCreated ?? 0} tarefas registradas no Kanban (${data.boardSlug})!`,
+        );
+      } else {
+        setAutoRegisterFeedback(
+          `Aviso: ${data.reason || data.message || "Nenhuma tarefa criada."}`,
+        );
+      }
+    } catch (err: any) {
+      setAutoRegisterFeedback(`Erro: ${err?.message || String(err)}`);
+    } finally {
+      setAutoRegistering(false);
+    }
+  }, [channelId, detail]);
 
   useEffect(() => {
     fetch(`/api/meetings?channelId=${channelId}`)
@@ -312,7 +342,24 @@ export default function MinutesModal({
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                {autoRegisterFeedback && (
+                  <div className="mb-3 p-2.5 rounded-lg bg-surface text-xs text-text-secondary border border-border">
+                    {autoRegisterFeedback}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAutoRegister}
+                    disabled={autoRegistering}
+                    className="px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 flex items-center gap-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50 transition-colors"
+                    title="Extrair ações da ata e cadastrar cards automaticamente no Kanban"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {autoRegistering ? "Registrando no Kanban..." : "Auto-Registrar no Kanban"}
+                  </button>
+
                   <button
                     onClick={handleDelete}
                     disabled={deleting}

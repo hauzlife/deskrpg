@@ -55,6 +55,7 @@ import {
   ingest,
   type IngestDeps,
 } from "./automation-events";
+import { startScrumScheduler } from "@/lib/scrum-scheduler";
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -736,6 +737,7 @@ export async function startAutomationPollers(io: ChannelIo): Promise<AutomationP
       `[automation-poller] initial discovery failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+  startScrumScheduler(60_000);
   return live;
 }
 

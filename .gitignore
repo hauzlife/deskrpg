@@ -97,3 +97,4 @@ __pycache__/
 !/deploy/office/
 deploy/hostinger/catalog-submission.md
 .worktrees/
+graphify-out/

@@ -14,7 +14,9 @@ test("JsonLd component outputs valid Schema.org graph with SoftwareApplication a
   assert.equal(parsed["@context"], "https://schema.org");
   assert.ok(Array.isArray(parsed["@graph"]));
 
-  const app = parsed["@graph"].find((node: { "@type": string }) => node["@type"] === "SoftwareApplication");
+  const app = parsed["@graph"].find(
+    (node: { "@type": string }) => node["@type"] === "SoftwareApplication",
+  );
   assert.ok(app, "Must contain SoftwareApplication schema");
   assert.equal(app.name, "DeskRPG for Hermes");
   assert.equal(app.url, "https://deskrpg.com");

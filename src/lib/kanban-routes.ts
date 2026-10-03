@@ -862,7 +862,12 @@ export async function createSwarm(req: NextRequest, channelId: string) {
   // dispatcher would then see. Omitted roles are resolved by profile so the same company defaults
   // work in every channel even though NPC ids are channel-specific.
   const workerProfiles: string[] = [];
-  const resolvedWorkers: Array<{ profile: string; title: string; body?: string; skills?: string[] }> = [];
+  const resolvedWorkers: Array<{
+    profile: string;
+    title: string;
+    body?: string;
+    skills?: string[];
+  }> = [];
   if (workers) {
     for (const worker of workers) {
       const r = await resolveAssignee(ctx, worker.npcId);

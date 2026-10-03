@@ -519,17 +519,26 @@ export default function MeetingRoom({
           };
           setMessages((msgs) => appendMeetingMessage(msgs, finalizedMessage));
 
-          if (typeof window !== "undefined" && "speechSynthesis" in window && finalizedMessage.content) {
+          if (
+            typeof window !== "undefined" &&
+            "speechSynthesis" in window &&
+            finalizedMessage.content
+          ) {
             try {
               const utterance = new SpeechSynthesisUtterance(finalizedMessage.content);
               utterance.lang = "pt-BR";
               const allVoices = window.speechSynthesis.getVoices();
-              const ptVoices = allVoices.filter((v) => v.lang.replace(/_/g, "-").toLowerCase().startsWith("pt"));
+              const ptVoices = allVoices.filter((v) =>
+                v.lang.replace(/_/g, "-").toLowerCase().startsWith("pt"),
+              );
               const siriVoices = ptVoices.filter((v) => /siri/i.test(v.name));
               const candidateVoices = siriVoices.length > 0 ? siriVoices : ptVoices;
               if (candidateVoices.length > 0) {
                 // Intercala entre as vozes disponíveis baseado no ID do NPC ou histórico de mensagens
-                const voiceIndex = (data.npcId ? data.npcId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) : 0) % candidateVoices.length;
+                const voiceIndex =
+                  (data.npcId
+                    ? data.npcId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0)
+                    : 0) % candidateVoices.length;
                 utterance.voice = candidateVoices[voiceIndex];
               }
               window.speechSynthesis.speak(utterance);

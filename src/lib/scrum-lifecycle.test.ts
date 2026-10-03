@@ -1,9 +1,9 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
-import { getSqliteDatabase } from './autonomous-lifecycle-hooks';
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { getSqliteDatabase } from "./autonomous-lifecycle-hooks";
 import {
   generateSprintTag,
   sealSprintGoal,
@@ -12,12 +12,12 @@ import {
   generateSprintRetrospective,
   createScrumCeremonyMeeting,
   getDefaultParticipantsForCeremony,
-} from './scrum-lifecycle';
+} from "./scrum-lifecycle";
 
 function createMockDbs(): { tmpDir: string; kanbanDbPath: string; deskrpgDbPath: string } {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scrum-lifecycle-test-'));
-  const kanbanDbPath = path.join(tmpDir, 'kanban.db');
-  const deskrpgDbPath = path.join(tmpDir, 'deskrpg.db');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "scrum-lifecycle-test-"));
+  const kanbanDbPath = path.join(tmpDir, "kanban.db");
+  const deskrpgDbPath = path.join(tmpDir, "deskrpg.db");
 
   const sqliteKanban = getSqliteDatabase(kanbanDbPath);
   sqliteKanban.exec(`
@@ -84,60 +84,60 @@ function createMockDbs(): { tmpDir: string; kanbanDbPath: string; deskrpgDbPath:
   return { tmpDir, kanbanDbPath, deskrpgDbPath };
 }
 
-test('generateSprintTag returns valid ISO sprint tag', () => {
-  const tag = generateSprintTag(new Date('2026-10-01T12:00:00Z'));
+test("generateSprintTag returns valid ISO sprint tag", () => {
+  const tag = generateSprintTag(new Date("2026-10-01T12:00:00Z"));
   assert.match(tag, /^sprint-\d{2}-2026$/);
 });
 
-test('createScrumCeremonyMeeting instantiates authentic DeskRPG meeting with visual seating, transcript and outcome', async () => {
+test("createScrumCeremonyMeeting instantiates authentic DeskRPG meeting with visual seating, transcript and outcome", async () => {
   const { tmpDir, kanbanDbPath, deskrpgDbPath } = createMockDbs();
 
   // Test Sprint Planning Meeting
   const planResult = await createScrumCeremonyMeeting({
-    ceremonyType: 'sprint_planning',
-    boardSlug: 'hot-telegram',
-    channelId: 'c_general',
-    sprintTag: 'sprint-40-2026',
-    sprintGoal: 'Implementar checkout PIX v2 com 100% de reconciliação',
+    ceremonyType: "sprint_planning",
+    boardSlug: "hot-telegram",
+    channelId: "c_general",
+    sprintTag: "sprint-40-2026",
+    sprintGoal: "Implementar checkout PIX v2 com 100% de reconciliação",
     deskrpgDbPath,
     kanbanDbPath,
     plannedItems: [
       {
-        title: 'Criar webhook de liquidação PIX',
-        acceptance: 'Idempotência garantida via Redis e ledger SQLite',
-        assigneeNpcId: 'npc_backend',
-        assigneeName: 'backend-engineer',
+        title: "Criar webhook de liquidação PIX",
+        acceptance: "Idempotência garantida via Redis e ledger SQLite",
+        assigneeNpcId: "npc_backend",
+        assigneeName: "backend-engineer",
       },
       {
-        title: 'Homologação E2E de compra PIX',
-        acceptance: '10/10 compras teste liquidadas com sucesso',
-        assigneeNpcId: 'npc_qa',
-        assigneeName: 'qa-engineer',
+        title: "Homologação E2E de compra PIX",
+        acceptance: "10/10 compras teste liquidadas com sucesso",
+        assigneeNpcId: "npc_qa",
+        assigneeName: "qa-engineer",
       },
     ],
   });
 
   assert.equal(planResult.success, true);
   assert.match(planResult.meetingId, /^m_/);
-  assert.equal(planResult.ceremonyType, 'sprint_planning');
+  assert.equal(planResult.ceremonyType, "sprint_planning");
   assert.match(planResult.topic, /Sprint Planning/);
   assert.ok(planResult.participants.length >= 4);
   assert.ok(planResult.totalTurns >= 5);
-  assert.ok(planResult.transcript.includes('[product-manager]'));
-  assert.ok(planResult.transcript.includes('[cpo]'));
+  assert.ok(planResult.transcript.includes("[product-manager]"));
+  assert.ok(planResult.transcript.includes("[cpo]"));
   assert.equal(planResult.outcome.followUps.length, 2);
-  assert.equal(planResult.outcome.followUps[0].assigneeName, 'backend-engineer');
-  assert.equal(planResult.outcome.followUps[1].assigneeName, 'qa-engineer');
+  assert.equal(planResult.outcome.followUps[0].assigneeName, "backend-engineer");
+  assert.equal(planResult.outcome.followUps[1].assigneeName, "qa-engineer");
 
   // Verify persistence in DeskRPG meeting_minutes table
   const sqliteDesk = getSqliteDatabase(deskrpgDbPath);
   const row = sqliteDesk
-    .prepare('SELECT * FROM meeting_minutes WHERE id = ?')
+    .prepare("SELECT * FROM meeting_minutes WHERE id = ?")
     .get(planResult.meetingId) as any;
 
   assert.ok(row);
   assert.equal(row.topic, planResult.topic);
-  assert.ok(row.transcript.includes('Sprint Planning'));
+  assert.ok(row.transcript.includes("Sprint Planning"));
   const savedOutcome = JSON.parse(row.outcome_json || row.outcomeJson);
   assert.equal(savedOutcome.decisions.length >= 2, true);
   assert.equal(savedOutcome.followUps.length, 2);
@@ -146,30 +146,34 @@ test('createScrumCeremonyMeeting instantiates authentic DeskRPG meeting with vis
 
   // Verify that tasks were autonomously created in Kanban
   const sqliteKanban = getSqliteDatabase(kanbanDbPath);
-  const tasksInKanban = sqliteKanban.prepare('SELECT id, title, status, assignee FROM tasks').all() as any[];
+  const tasksInKanban = sqliteKanban
+    .prepare("SELECT id, title, status, assignee FROM tasks")
+    .all() as any[];
   assert.equal(tasksInKanban.length, 2);
-  assert.equal(tasksInKanban[0].assignee, 'backend-engineer');
-  assert.equal(tasksInKanban[1].assignee, 'qa-engineer');
+  assert.equal(tasksInKanban[0].assignee, "backend-engineer");
+  assert.equal(tasksInKanban[1].assignee, "qa-engineer");
 
   // Test Sprint Review with Sovereign (Artur Modesto)
   const reviewResult = await createScrumCeremonyMeeting({
-    ceremonyType: 'sprint_review',
-    boardSlug: 'hot-telegram',
-    channelId: 'c_general',
-    sprintTag: 'sprint-40-2026',
+    ceremonyType: "sprint_review",
+    boardSlug: "hot-telegram",
+    channelId: "c_general",
+    sprintTag: "sprint-40-2026",
     deskrpgDbPath,
     kanbanDbPath,
   });
 
   assert.equal(reviewResult.success, true);
-  assert.ok(reviewResult.participants.some((p) => p.name === 'Artur Modesto' && p.type === 'player'));
-  assert.ok(reviewResult.transcript.includes('Artur Modesto'));
-  assert.ok(reviewResult.conclusions.includes('homologada pelo Soberano'));
+  assert.ok(
+    reviewResult.participants.some((p) => p.name === "Artur Modesto" && p.type === "player"),
+  );
+  assert.ok(reviewResult.transcript.includes("Artur Modesto"));
+  assert.ok(reviewResult.conclusions.includes("homologada pelo Soberano"));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlog', async () => {
+test("sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlog", async () => {
   const { tmpDir, kanbanDbPath } = createMockDbs();
   const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
@@ -183,11 +187,11 @@ test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlo
       ('t_s3', 'Painel de conversão', 'Métricas de checkout', 'frontend-engineer', 'ready', ${now});
   `);
 
-  const goal = 'Lançar checkout de PIX v2 com reconciliação 100% íntegra';
-  const sprintTag = 'sprint-40-2026';
+  const goal = "Lançar checkout de PIX v2 com reconciliação 100% íntegra";
+  const sprintTag = "sprint-40-2026";
 
   const res = await sealSprintGoal({
-    boardSlug: 'hot-telegram',
+    boardSlug: "hot-telegram",
     goal,
     sprintTag,
     databasePath: kanbanDbPath,
@@ -197,18 +201,18 @@ test('sealSprintGoal binds goal, tags committed tasks, and freezes sprint backlo
   assert.equal(res.sprintTag, sprintTag);
   assert.equal(res.committedTasksCount, 3);
 
-  const t1 = sqlite.prepare('SELECT body FROM tasks WHERE id = ?').get('t_s1') as any;
-  assert.ok(t1.body.includes('sprint-40-2026'));
+  const t1 = sqlite.prepare("SELECT body FROM tasks WHERE id = ?").get("t_s1") as any;
+  assert.ok(t1.body.includes("sprint-40-2026"));
   assert.ok(t1.body.includes(goal));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('auditSprintBurndown calculates throughput and identifies risks', async () => {
+test("auditSprintBurndown calculates throughput and identifies risks", async () => {
   const { tmpDir, kanbanDbPath } = createMockDbs();
   const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
-  const sprintTag = 'sprint-40-2026';
+  const sprintTag = "sprint-40-2026";
 
   // 1 done, 1 review, 3 blocked
   sqlite.exec(`
@@ -222,7 +226,7 @@ test('auditSprintBurndown calculates throughput and identifies risks', async () 
   `);
 
   const burndown = await auditSprintBurndown({
-    boardSlug: 'hot-telegram',
+    boardSlug: "hot-telegram",
     sprintTag,
     databasePath: kanbanDbPath,
   });
@@ -231,17 +235,17 @@ test('auditSprintBurndown calculates throughput and identifies risks', async () 
   assert.equal(burndown.doneCount, 1);
   assert.equal(burndown.reviewCount, 1);
   assert.equal(burndown.blockedCount, 3);
-  assert.equal(burndown.health, 'critical');
-  assert.ok(burndown.recommendations.some((r) => r.includes('HK-08 BlockerTriageHook')));
+  assert.equal(burndown.health, "critical");
+  assert.ok(burndown.recommendations.some((r) => r.includes("HK-08 BlockerTriageHook")));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('generateSprintReviewSITREP compiles merged increments and DoD validation', async () => {
+test("generateSprintReviewSITREP compiles merged increments and DoD validation", async () => {
   const { tmpDir, kanbanDbPath } = createMockDbs();
   const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
-  const sprintTag = 'sprint-40-2026';
+  const sprintTag = "sprint-40-2026";
 
   sqlite.exec(`
     INSERT INTO tasks (id, title, body, status, created_at, completed_at)
@@ -251,24 +255,24 @@ test('generateSprintReviewSITREP compiles merged increments and DoD validation',
   `);
 
   const sitrep = await generateSprintReviewSITREP({
-    boardSlug: 'hot-telegram',
+    boardSlug: "hot-telegram",
     sprintTag,
     databasePath: kanbanDbPath,
   });
 
   assert.equal(sitrep.totalCompleted, 2);
-  assert.ok(sitrep.sitrepSummary.includes('SITREP de Encerramento de Sprint'));
-  assert.ok(sitrep.sitrepSummary.includes('PR #42'));
-  assert.ok(sitrep.sitrepSummary.includes('PR #48'));
+  assert.ok(sitrep.sitrepSummary.includes("SITREP de Encerramento de Sprint"));
+  assert.ok(sitrep.sitrepSummary.includes("PR #42"));
+  assert.ok(sitrep.sitrepSummary.includes("PR #48"));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('generateSprintRetrospective extracts HK-08 auto-remediations and CI telemetry', async () => {
+test("generateSprintRetrospective extracts HK-08 auto-remediations and CI telemetry", async () => {
   const { tmpDir, kanbanDbPath } = createMockDbs();
   const sqlite = getSqliteDatabase(kanbanDbPath);
   const now = Math.floor(Date.now() / 1000);
-  const sprintTag = 'sprint-40-2026';
+  const sprintTag = "sprint-40-2026";
 
   sqlite.exec(`
     INSERT INTO tasks (id, title, body, status, created_at)
@@ -282,7 +286,7 @@ test('generateSprintRetrospective extracts HK-08 auto-remediations and CI teleme
   `);
 
   const retro = await generateSprintRetrospective({
-    boardSlug: 'hot-telegram',
+    boardSlug: "hot-telegram",
     sprintTag,
     databasePath: kanbanDbPath,
   });
@@ -290,8 +294,8 @@ test('generateSprintRetrospective extracts HK-08 auto-remediations and CI teleme
   assert.equal(retro.totalBlockersEncountered, 3);
   assert.equal(retro.autoRemediatedCount, 1);
   assert.equal(retro.ciFailuresCount, 1);
-  assert.ok(retro.aarReport.includes('After Action Review'));
-  assert.ok(retro.aarReport.includes('Auto-remediação de workspaces HK-08 recuperou 1 incidentes'));
+  assert.ok(retro.aarReport.includes("After Action Review"));
+  assert.ok(retro.aarReport.includes("Auto-remediação de workspaces HK-08 recuperou 1 incidentes"));
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

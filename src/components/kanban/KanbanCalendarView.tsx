@@ -6,11 +6,8 @@ import {
   ChevronRight,
   Calendar as CalendarIcon,
   CheckCircle2,
-  Clock,
   AlertTriangle,
   PlayCircle,
-  FileText,
-  Filter,
   Users,
 } from "lucide-react";
 import type { KanbanTask } from "@/lib/hermes/deskrpg-plugin-types";
@@ -56,7 +53,7 @@ function formatDateKey(date: Date): string {
 }
 
 export default function KanbanCalendarView({
-  boardSlug,
+  boardSlug: _boardSlug,
   channelId,
   tasks,
   now,
@@ -76,14 +73,12 @@ export default function KanbanCalendarView({
 
   // Meetings data
   const [meetings, setMeetings] = useState<CalendarMeetingItem[]>([]);
-  const [loadingMeetings, setLoadingMeetings] = useState(false);
 
   // Selected Day Detail Modal
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!channelId) return;
-    setLoadingMeetings(true);
     fetch(`/api/meetings?channelId=${encodeURIComponent(channelId)}`)
       .then((r) => r.json())
       .then((data) => {
@@ -96,11 +91,10 @@ export default function KanbanCalendarView({
             totalTurns: m.totalTurns || m.total_turns || 0,
             durationSeconds: m.durationSeconds || m.duration_seconds || null,
             participants: m.participants || [],
-          }))
+          })),
         );
       })
-      .catch(() => {})
-      .finally(() => setLoadingMeetings(false));
+      .catch(() => {});
   }, [channelId]);
 
   // Handle Preset changes
@@ -171,7 +165,8 @@ export default function KanbanCalendarView({
       const fullTask = t as any;
       let targetTimeMs: number | null = null;
       if (t.status === "done" && showDone) {
-        targetTimeMs = taskTimeMs(fullTask.completed_at) ?? taskTimeMs(t.started_at) ?? taskTimeMs(t.created_at);
+        targetTimeMs =
+          taskTimeMs(fullTask.completed_at) ?? taskTimeMs(t.started_at) ?? taskTimeMs(t.created_at);
       } else if (t.status === "blocked" && showBlocked) {
         targetTimeMs = taskTimeMs(t.started_at) ?? taskTimeMs(t.created_at);
       } else if (t.status === "running" && showRunning) {
@@ -372,7 +367,9 @@ export default function KanbanCalendarView({
               type="button"
               onClick={() => setViewMode("month")}
               className={`rounded px-2 py-0.5 text-xs ${
-                viewMode === "month" ? "bg-primary text-primary-foreground font-medium" : "text-text-muted hover:text-text"
+                viewMode === "month"
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "text-text-muted hover:text-text"
               }`}
             >
               Mês
@@ -381,7 +378,9 @@ export default function KanbanCalendarView({
               type="button"
               onClick={() => setViewMode("week")}
               className={`rounded px-2 py-0.5 text-xs ${
-                viewMode === "week" ? "bg-primary text-primary-foreground font-medium" : "text-text-muted hover:text-text"
+                viewMode === "week"
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "text-text-muted hover:text-text"
               }`}
             >
               Semana
@@ -390,7 +389,9 @@ export default function KanbanCalendarView({
               type="button"
               onClick={() => setViewMode("schedule")}
               className={`rounded px-2 py-0.5 text-xs ${
-                viewMode === "schedule" ? "bg-primary text-primary-foreground font-medium" : "text-text-muted hover:text-text"
+                viewMode === "schedule"
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "text-text-muted hover:text-text"
               }`}
             >
               Agenda
@@ -482,7 +483,9 @@ export default function KanbanCalendarView({
                         {d.getDate()}
                       </span>
                       {events.length > 0 && (
-                        <span className="text-[10px] text-text-muted font-mono">{events.length}</span>
+                        <span className="text-[10px] text-text-muted font-mono">
+                          {events.length}
+                        </span>
                       )}
                     </div>
 
@@ -496,10 +499,14 @@ export default function KanbanCalendarView({
                         const isMeeting = ev.type === "meeting";
 
                         let badgeColor = "bg-zinc-800 text-zinc-300 border-zinc-700";
-                        if (isDone) badgeColor = "bg-emerald-950/80 text-emerald-300 border-emerald-500/40";
-                        else if (isBlocked) badgeColor = "bg-rose-950/80 text-rose-300 border-rose-500/40";
-                        else if (isRunning) badgeColor = "bg-blue-950/80 text-blue-300 border-blue-500/40";
-                        else if (isMeeting) badgeColor = "bg-amber-950/80 text-amber-300 border-amber-500/40";
+                        if (isDone)
+                          badgeColor = "bg-emerald-950/80 text-emerald-300 border-emerald-500/40";
+                        else if (isBlocked)
+                          badgeColor = "bg-rose-950/80 text-rose-300 border-rose-500/40";
+                        else if (isRunning)
+                          badgeColor = "bg-blue-950/80 text-blue-300 border-blue-500/40";
+                        else if (isMeeting)
+                          badgeColor = "bg-amber-950/80 text-amber-300 border-amber-500/40";
 
                         return (
                           <div
@@ -512,9 +519,15 @@ export default function KanbanCalendarView({
                             className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] leading-tight truncate transition-transform hover:scale-[1.02] shadow-2xs ${badgeColor}`}
                             title={`${ev.time ? `[${ev.time}] ` : ""}${ev.title}`}
                           >
-                            {isDone && <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-400" />}
-                            {isBlocked && <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-rose-400" />}
-                            {isRunning && <PlayCircle className="h-2.5 w-2.5 shrink-0 text-blue-400" />}
+                            {isDone && (
+                              <CheckCircle2 className="h-2.5 w-2.5 shrink-0 text-emerald-400" />
+                            )}
+                            {isBlocked && (
+                              <AlertTriangle className="h-2.5 w-2.5 shrink-0 text-rose-400" />
+                            )}
+                            {isRunning && (
+                              <PlayCircle className="h-2.5 w-2.5 shrink-0 text-blue-400" />
+                            )}
                             {isMeeting && <Users className="h-2.5 w-2.5 shrink-0 text-amber-400" />}
                             <span className="truncate">{ev.title}</span>
                           </div>
@@ -565,7 +578,9 @@ export default function KanbanCalendarView({
                     className={`flex flex-col p-2 space-y-1.5 ${isToday ? "bg-primary/5" : ""}`}
                   >
                     {events.length === 0 ? (
-                      <div className="py-6 text-center text-[11px] text-text-muted/50 italic">Sem eventos</div>
+                      <div className="py-6 text-center text-[11px] text-text-muted/50 italic">
+                        Sem eventos
+                      </div>
                     ) : (
                       events.map((ev, eIdx) => (
                         <div
@@ -592,7 +607,13 @@ export default function KanbanCalendarView({
                           </div>
                           <div className="font-medium leading-snug line-clamp-2">{ev.title}</div>
                           <div className="flex items-center justify-between pt-1 text-[10px] text-text-muted border-t border-border/50">
-                            <span>{ev.assignee ? `@${ev.assignee}` : ev.type === "meeting" ? "🏛️ Reunião" : "Sistema"}</span>
+                            <span>
+                              {ev.assignee
+                                ? `@${ev.assignee}`
+                                : ev.type === "meeting"
+                                  ? "🏛️ Reunião"
+                                  : "Sistema"}
+                            </span>
                             <span className="capitalize">{ev.status || "concluído"}</span>
                           </div>
                         </div>
@@ -624,12 +645,20 @@ export default function KanbanCalendarView({
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-sm font-bold px-2 py-0.5 rounded ${
-                          isToday ? "bg-primary text-primary-foreground" : "bg-surface-raised text-text"
+                          isToday
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-surface-raised text-text"
                         }`}
                       >
-                        {d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}
+                        {d.toLocaleDateString("pt-BR", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                        })}
                       </span>
-                      {isToday && <span className="text-xs font-semibold text-primary">(Hoje)</span>}
+                      {isToday && (
+                        <span className="text-xs font-semibold text-primary">(Hoje)</span>
+                      )}
                     </div>
                     <span className="text-xs text-text-muted font-mono">
                       {events.length} {events.length === 1 ? "registro" : "registros"}
@@ -637,7 +666,9 @@ export default function KanbanCalendarView({
                   </div>
 
                   {events.length === 0 ? (
-                    <div className="text-xs text-text-muted italic py-1">Nenhuma atividade registrada neste dia.</div>
+                    <div className="text-xs text-text-muted italic py-1">
+                      Nenhuma atividade registrada neste dia.
+                    </div>
                   ) : (
                     <div className="grid gap-2 sm:grid-cols-2">
                       {events.map((ev, eIdx) => {
@@ -657,18 +688,32 @@ export default function KanbanCalendarView({
                             className="flex flex-col justify-between rounded-md border border-border bg-surface-raised p-2.5 hover:border-primary/50 transition-colors cursor-pointer"
                           >
                             <div className="flex items-start gap-2 mb-1.5">
-                              {isDone && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />}
-                              {isBlocked && <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />}
-                              {isRunning && <PlayCircle className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />}
-                              {isMeeting && <Users className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />}
+                              {isDone && (
+                                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                              )}
+                              {isBlocked && (
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                              )}
+                              {isRunning && (
+                                <PlayCircle className="h-4 w-4 shrink-0 text-blue-400 mt-0.5" />
+                              )}
+                              {isMeeting && (
+                                <Users className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                              )}
                               <div className="flex-1 min-w-0">
-                                <span className="text-xs font-medium text-text line-clamp-2">{ev.title}</span>
+                                <span className="text-xs font-medium text-text line-clamp-2">
+                                  {ev.title}
+                                </span>
                               </div>
                             </div>
                             <div className="flex items-center justify-between text-[11px] text-text-muted pt-1 border-t border-border/40">
                               <span className="font-mono">{ev.time}</span>
                               <span className="truncate max-w-[120px]">
-                                {ev.assignee ? `@${ev.assignee}` : isMeeting ? "Reunião de Squad" : ""}
+                                {ev.assignee
+                                  ? `@${ev.assignee}`
+                                  : isMeeting
+                                    ? "Reunião de Squad"
+                                    : ""}
                               </span>
                             </div>
                           </div>
@@ -722,7 +767,13 @@ export default function KanbanCalendarView({
                       <span className="text-[10px] font-mono text-text-muted">{ev.time}</span>
                     </div>
                     <div className="flex items-center justify-between text-[11px] text-text-muted">
-                      <span>{ev.assignee ? `@${ev.assignee}` : ev.type === "meeting" ? "Ata de Reunião" : "Card"}</span>
+                      <span>
+                        {ev.assignee
+                          ? `@${ev.assignee}`
+                          : ev.type === "meeting"
+                            ? "Ata de Reunião"
+                            : "Card"}
+                      </span>
                       <span className="capitalize">{ev.status || "concluído"}</span>
                     </div>
                   </div>

@@ -1,30 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createScrumCeremonyMeeting, type ScrumCeremonyType } from '@/lib/scrum-lifecycle';
+import { NextRequest, NextResponse } from "next/server";
+import { createScrumCeremonyMeeting, type ScrumCeremonyType } from "@/lib/scrum-lifecycle";
 
 const VALID_CEREMONIES = new Set<ScrumCeremonyType>([
-  'sprint_planning',
-  'daily_standup',
-  'mid_sprint_check',
-  'sprint_review',
-  'sprint_retrospective',
+  "sprint_planning",
+  "daily_standup",
+  "mid_sprint_check",
+  "sprint_review",
+  "sprint_retrospective",
 ]);
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== 'object') {
-      return NextResponse.json({ error: 'invalid_payload', message: 'Payload must be a JSON object' }, { status: 400 });
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        { error: "invalid_payload", message: "Payload must be a JSON object" },
+        { status: 400 },
+      );
     }
 
-    const { ceremonyType, boardSlug = 'hot-telegram', channelId = 'c_general', sprintGoal, sprintTag, plannedItems } = body;
+    const {
+      ceremonyType,
+      boardSlug = "hot-telegram",
+      channelId = "c_general",
+      sprintGoal,
+      sprintTag,
+      plannedItems,
+    } = body;
 
     if (!ceremonyType || !VALID_CEREMONIES.has(ceremonyType)) {
       return NextResponse.json(
         {
-          error: 'invalid_ceremony_type',
-          message: `Ceremony type must be one of: ${Array.from(VALID_CEREMONIES).join(', ')}`,
+          error: "invalid_ceremony_type",
+          message: `Ceremony type must be one of: ${Array.from(VALID_CEREMONIES).join(", ")}`,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -54,7 +64,10 @@ export async function POST(req: NextRequest) {
       transcript: result.transcript,
     });
   } catch (err: any) {
-    console.error('[scrum-ceremony-api] Error instantiating ceremony meeting:', err);
-    return NextResponse.json({ error: 'internal_error', message: String(err?.message ?? err) }, { status: 500 });
+    console.error("[scrum-ceremony-api] Error instantiating ceremony meeting:", err);
+    return NextResponse.json(
+      { error: "internal_error", message: String(err?.message ?? err) },
+      { status: 500 },
+    );
   }
 }

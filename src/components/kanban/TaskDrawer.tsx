@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { ChevronDown, ChevronRight, Paperclip, Pencil, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Paperclip, Pencil, X } from "lucide-react";
 
 import { useLocale, useT } from "@/lib/i18n";
 import {
@@ -503,6 +503,15 @@ export default function TaskDrawer({
 
               {status === "blocked" && (
                 <div className="space-y-1.5 rounded-md border border-border p-2">
+                  {(task.consecutive_failures ?? 0) >= 3 && (
+                    <div className="flex items-center gap-1.5 p-2 rounded bg-danger/10 border border-danger/30 text-danger text-xs mb-1.5">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>
+                        <strong>Circuit Breaker Ativo:</strong> {task.consecutive_failures} falhas
+                        consecutivas registradas. Desbloqueie para rearmar a execução.
+                      </span>
+                    </div>
+                  )}
                   <textarea
                     className={`${FIELD} min-h-[48px]`}
                     placeholder={t("kanban.action.unblockComment")}
@@ -522,7 +531,9 @@ export default function TaskDrawer({
                       })
                     }
                   >
-                    {t("kanban.action.unblock")}
+                    {(task.consecutive_failures ?? 0) >= 3
+                      ? "Rearmar Disjuntor & Desbloquear"
+                      : t("kanban.action.unblock")}
                   </button>
                 </div>
               )}

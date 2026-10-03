@@ -2382,6 +2382,7 @@ const ja: Record<string, string> = {
   "nav.tasks": "タスク",
   "nav.artifacts": "成果物",
   "nav.meetings": "ミーティング",
+  "nav.review": "3Dスタジオレビュー",
   "gateways.employeesTitle": "このゲートウェイの社員",
   "gateways.employeesHint":
     "社員(Hermes プロフィール)の登録・人格・外見・モデルは社員画面で管理します。",

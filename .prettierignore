@@ -20,3 +20,14 @@ public/assets/spritesheets/
 
 # 과거 릴리스의 바이트 해시를 고정한 원본 스냅샷
 src/lib/fixtures/official-*.json
+
+# 개발 메타·캐시·작업용 사본
+.gitnexus/
+.worktrees/
+.agents/
+.gemini/
+.claude/
+.codex/
+.superpowers/
+.artifacts/
+graphify-out/

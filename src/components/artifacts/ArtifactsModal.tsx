@@ -207,108 +207,102 @@ export default function ArtifactsModal({
         </div>
       </div>
 
-        {gate ? (
-          <div className="flex-1 overflow-y-auto p-4">
-            <div
-              data-gate={gate}
-              className="mx-auto mt-8 max-w-[560px] rounded-xl border border-border bg-surface p-5 text-xs"
-            >
-              <div className="text-sm font-bold text-text flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-npc-dark" />
-                {gate === "gateway"
-                  ? t("artifacts.gate.gateway")
-                  : t("artifacts.gate.upgrade", { minVersion: error?.minVersion ?? "0.8.0" })}
-              </div>
+      {gate ? (
+        <div className="flex-1 overflow-y-auto p-4">
+          <div
+            data-gate={gate}
+            className="mx-auto mt-8 max-w-[560px] rounded-xl border border-border bg-surface p-5 text-xs"
+          >
+            <div className="text-sm font-bold text-text flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-npc-dark" />
+              {gate === "gateway"
+                ? t("artifacts.gate.gateway")
+                : t("artifacts.gate.upgrade", { minVersion: error?.minVersion ?? "0.8.0" })}
+            </div>
+            {gateBlocker.blocker && isSetupBlocker(gateBlocker.blocker) && (
+              <button
+                type="button"
+                onClick={() => setChecklistOpen(true)}
+                className="mt-2 underline"
+              >
+                {t("gateChecklist.whatIsNeeded")}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {error && (
+            <div className="flex items-center gap-2 px-5 py-2 border-b border-border text-xs text-danger">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="break-words">
+                {t("artifacts.error")} — {error.message}
+              </span>
               {gateBlocker.blocker && isSetupBlocker(gateBlocker.blocker) && (
-                <button
-                  type="button"
-                  onClick={() => setChecklistOpen(true)}
-                  className="mt-2 underline"
-                >
+                <button type="button" onClick={() => setChecklistOpen(true)} className="underline">
                   {t("gateChecklist.whatIsNeeded")}
                 </button>
               )}
+              <button type="button" className="ml-auto underline" onClick={() => void load()}>
+                {t("common.retry")}
+              </button>
+            </div>
+          )}
+          <div className="flex flex-1 min-h-0">
+            <div
+              className={`w-full md:w-[380px] md:flex-shrink-0 md:border-r border-border min-h-0 ${
+                selectedId ? "hidden md:block" : "block"
+              }`}
+            >
+              <ArtifactList
+                items={items}
+                filter={filter}
+                onFilter={setFilter}
+                npcs={npcs}
+                selectedId={selectedId}
+                onSelect={(id) => guarded(() => setSelectedId(id))}
+                hasMore={hasMore}
+                loading={loading}
+                onLoadMore={() => void load(cursor)}
+                thumbnailUrl={(a) => api.contentUrl(a.id, a.current_version)}
+                cardAttachments={visibleCardAttachments(
+                  cardAttachments.items,
+                  items,
+                  filter,
+                  initialTaskId,
+                )}
+                cardAttachmentsSupported={cardAttachments.supported}
+                cardAttachmentsHasMore={cardAttachments.hasMore}
+                onLoadMoreCardAttachments={() => void cardAttachments.loadMore()}
+                cardAttachmentUrl={(file) =>
+                  createKanbanApi(channelId, undefined, file.boardSlug || undefined).attachmentUrl(
+                    file.id,
+                  )
+                }
+              />
+            </div>
+            <div className={`flex-1 min-w-0 min-h-0 ${selectedId ? "block" : "hidden md:block"}`}>
+              {selectedId ? (
+                <ArtifactViewer
+                  ref={viewerRef}
+                  key={selectedId}
+                  api={api}
+                  artifactId={selectedId}
+                  reloadKey={viewerReload}
+                  onOpenSource={onOpenSource}
+                  onDeleted={removeItem}
+                  onClose={() => setSelectedId(null)}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center text-text-dim">
+                  <Package className="w-10 h-10 opacity-30" aria-hidden="true" />
+                </div>
+              )}
             </div>
           </div>
-        ) : (
-          <>
-            {error && (
-              <div className="flex items-center gap-2 px-5 py-2 border-b border-border text-xs text-danger">
-                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="break-words">
-                  {t("artifacts.error")} — {error.message}
-                </span>
-                {gateBlocker.blocker && isSetupBlocker(gateBlocker.blocker) && (
-                  <button
-                    type="button"
-                    onClick={() => setChecklistOpen(true)}
-                    className="underline"
-                  >
-                    {t("gateChecklist.whatIsNeeded")}
-                  </button>
-                )}
-                <button type="button" className="ml-auto underline" onClick={() => void load()}>
-                  {t("common.retry")}
-                </button>
-              </div>
-            )}
-            <div className="flex flex-1 min-h-0">
-              <div
-                className={`w-full md:w-[380px] md:flex-shrink-0 md:border-r border-border min-h-0 ${
-                  selectedId ? "hidden md:block" : "block"
-                }`}
-              >
-                <ArtifactList
-                  items={items}
-                  filter={filter}
-                  onFilter={setFilter}
-                  npcs={npcs}
-                  selectedId={selectedId}
-                  onSelect={(id) => guarded(() => setSelectedId(id))}
-                  hasMore={hasMore}
-                  loading={loading}
-                  onLoadMore={() => void load(cursor)}
-                  thumbnailUrl={(a) => api.contentUrl(a.id, a.current_version)}
-                  cardAttachments={visibleCardAttachments(
-                    cardAttachments.items,
-                    items,
-                    filter,
-                    initialTaskId,
-                  )}
-                  cardAttachmentsSupported={cardAttachments.supported}
-                  cardAttachmentsHasMore={cardAttachments.hasMore}
-                  onLoadMoreCardAttachments={() => void cardAttachments.loadMore()}
-                  cardAttachmentUrl={(file) =>
-                    createKanbanApi(
-                      channelId,
-                      undefined,
-                      file.boardSlug || undefined,
-                    ).attachmentUrl(file.id)
-                  }
-                />
-              </div>
-              <div className={`flex-1 min-w-0 min-h-0 ${selectedId ? "block" : "hidden md:block"}`}>
-                {selectedId ? (
-                  <ArtifactViewer
-                    ref={viewerRef}
-                    key={selectedId}
-                    api={api}
-                    artifactId={selectedId}
-                    reloadKey={viewerReload}
-                    onOpenSource={onOpenSource}
-                    onDeleted={removeItem}
-                    onClose={() => setSelectedId(null)}
-                  />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-text-dim">
-                    <Package className="w-10 h-10 opacity-30" aria-hidden="true" />
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+        </>
+      )}
+    </div>
   );
 
   if (embedded) {

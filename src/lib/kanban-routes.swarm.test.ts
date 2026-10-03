@@ -345,4 +345,3 @@ test("a swarm API request fills omitted company roles from active channel profil
     reviewer_profile: "reviewer",
   });
 });
-

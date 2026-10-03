@@ -29,6 +29,7 @@ const eslintConfig = defineConfig([
   // (`_fromStatus`, `_catId` …). Tell the rule about that convention.
   {
     rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         {
@@ -63,6 +64,11 @@ const eslintConfig = defineConfig([
     ".superpowers/**",
     ".dryforge/**",
     ".artifacts/**",
+    ".worktrees/**",
+    ".agents/**",
+    ".gemini/**",
+    ".remember/**",
+    "graphify-out/**",
     // Local-only development tools (.gitignore:58). Excluded for the same reason —
     // untracked so CI cannot see them, and if only local lint fails the gate loses trust.
     "scripts/local/**",

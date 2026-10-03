@@ -16,10 +16,7 @@ const npcs = [
   { npcId: "c", npcName: "씨", profileName: "c", active: true },
 ];
 
-async function render(
-  policyModes: ("human" | "agent" | "mixed")[],
-  swarmNpcs = npcs,
-) {
+async function render(policyModes: ("human" | "agent" | "mixed")[], swarmNpcs = npcs) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -104,23 +101,34 @@ test("the swarm form resolves company defaults by profile instead of roster orde
     [
       { npcId: "n-reviewer", npcName: "Reviewer", profileName: "reviewer", active: true },
       { npcId: "n-frontend", npcName: "Frontend", profileName: "frontend-engineer", active: true },
-      { npcId: "n-orchestrator", npcName: "Orchestrator", profileName: "orchestrator", active: true },
+      {
+        npcId: "n-orchestrator",
+        npcName: "Orchestrator",
+        profileName: "orchestrator",
+        active: true,
+      },
       { npcId: "n-ml", npcName: "ML", profileName: "ml-engineer", active: true },
       { npcId: "n-backend", npcName: "Backend", profileName: "backend-engineer", active: true },
     ],
   );
   try {
-    const titles = [...view.host.querySelectorAll<HTMLInputElement>(`input[aria-label="${WORKER_TITLE}"]`)];
-    assert.deepEqual(titles.map((input) => input.value), ["Backend implementation", "Frontend implementation"]);
+    const titles = [
+      ...view.host.querySelectorAll<HTMLInputElement>(`input[aria-label="${WORKER_TITLE}"]`),
+    ];
+    assert.deepEqual(
+      titles.map((input) => input.value),
+      ["Backend implementation", "Frontend implementation"],
+    );
     const selects = [...view.host.querySelectorAll<HTMLSelectElement>("select")];
-    assert.deepEqual(selects.slice(0, 4).map((select) => select.value), [
-      "n-backend",
-      "n-frontend",
-      "n-ml",
-      "n-orchestrator",
-    ]);
+    assert.deepEqual(
+      selects.slice(0, 4).map((select) => select.value),
+      ["n-backend", "n-frontend", "n-ml", "n-orchestrator"],
+    );
     assert.equal(view.host.querySelector<HTMLSelectElement>("#swarm-review-mode")?.value, "agent");
-    assert.equal(view.host.querySelector<HTMLSelectElement>("#swarm-reviewer")?.value, "n-reviewer");
+    assert.equal(
+      view.host.querySelector<HTMLSelectElement>("#swarm-reviewer")?.value,
+      "n-reviewer",
+    );
   } finally {
     await view.cleanup();
   }

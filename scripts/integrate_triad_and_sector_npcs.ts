@@ -1,15 +1,7 @@
-import {
-  db,
-  channels,
-  npcs,
-  chatRooms,
-  chatRoomMembers,
-  hermesProfiles,
-  nowForDb,
-} from '@/db';
-import { eq, and } from 'drizzle-orm';
-import { placeUnplacedNpcs } from '@/lib/npc-seating';
-import { randomUUID } from 'node:crypto';
+import { db, channels, npcs, chatRooms, chatRoomMembers, hermesProfiles, nowForDb } from "@/db";
+import { eq, and } from "drizzle-orm";
+import { placeUnplacedNpcs } from "@/lib/npc-seating";
+import { randomUUID } from "node:crypto";
 
 interface AdditionSpec {
   souls: string[];
@@ -17,84 +9,84 @@ interface AdditionSpec {
 }
 
 const ADDITIONS: Record<string, AdditionSpec> = {
-  'C-Suite': {
-    souls: ['orchestrator', 'reviewer', 'verifier'],
+  "C-Suite": {
+    souls: ["orchestrator", "reviewer", "verifier"],
     rooms: {
-      Boardroom: ['orchestrator', 'reviewer', 'verifier'],
+      Boardroom: ["orchestrator", "reviewer", "verifier"],
     },
   },
   Engineering: {
     souls: [
-      'orchestrator',
-      'reviewer',
-      'verifier',
-      'qa-engineer',
-      'implementation-planner',
-      'security-engineer',
-      'technical-writer',
+      "orchestrator",
+      "reviewer",
+      "verifier",
+      "qa-engineer",
+      "implementation-planner",
+      "security-engineer",
+      "technical-writer",
     ],
     rooms: {
-      'Dev Lab': [
-        'orchestrator',
-        'reviewer',
-        'verifier',
-        'qa-engineer',
-        'implementation-planner',
-        'security-engineer',
+      "Dev Lab": [
+        "orchestrator",
+        "reviewer",
+        "verifier",
+        "qa-engineer",
+        "implementation-planner",
+        "security-engineer",
       ],
-      'Meeting Room': ['orchestrator', 'technical-writer'],
+      "Meeting Room": ["orchestrator", "technical-writer"],
     },
   },
   Product: {
     souls: [
-      'orchestrator',
-      'verifier',
-      'implementation-planner',
-      'technical-writer',
-      'technical-architect',
+      "orchestrator",
+      "verifier",
+      "implementation-planner",
+      "technical-writer",
+      "technical-architect",
     ],
     rooms: {
-      'Product Office': [
-        'orchestrator',
-        'verifier',
-        'implementation-planner',
-        'technical-writer',
-        'technical-architect',
+      "Product Office": [
+        "orchestrator",
+        "verifier",
+        "implementation-planner",
+        "technical-writer",
+        "technical-architect",
       ],
-      'Brainstorm Room': ['orchestrator'],
+      "Brainstorm Room": ["orchestrator"],
     },
   },
   Operations: {
-    souls: ['reviewer', 'site-reliability-engineer'],
+    souls: ["reviewer", "site-reliability-engineer"],
     rooms: {
-      'Ops Control': ['reviewer'],
-      'War Room': ['reviewer', 'site-reliability-engineer'],
+      "Ops Control": ["reviewer"],
+      "War Room": ["reviewer", "site-reliability-engineer"],
     },
   },
-  'Creative/GTM': {
-    souls: ['orchestrator', 'reviewer', 'verifier'],
+  "Creative/GTM": {
+    souls: ["orchestrator", "reviewer", "verifier"],
     rooms: {
-      Campaigns: ['orchestrator', 'reviewer', 'verifier'],
-      Studio: ['reviewer'],
+      Campaigns: ["orchestrator", "reviewer", "verifier"],
+      Studio: ["reviewer"],
     },
   },
   Infrastructure: {
-    souls: ['orchestrator', 'reviewer', 'verifier'],
+    souls: ["orchestrator", "reviewer", "verifier"],
     rooms: {
-      'Incident Response': ['orchestrator', 'reviewer', 'verifier'],
-      NOC: ['orchestrator'],
+      "Incident Response": ["orchestrator", "reviewer", "verifier"],
+      NOC: ["orchestrator"],
     },
   },
   Knowledge: {
-    souls: ['orchestrator', 'reviewer', 'verifier'],
+    souls: ["orchestrator", "reviewer", "verifier"],
     rooms: {
-      'Deep Thought': ['orchestrator', 'reviewer', 'verifier'],
+      "Deep Thought": ["orchestrator", "reviewer", "verifier"],
     },
   },
 };
 
 async function main() {
-  console.log('=== Integrating Triad & Sector NPCs into DeskRPG Channels ===\n');
+  console.log("=== Integrating Triad & Sector NPCs into DeskRPG Channels ===\n");
 
   const allProfiles = await db.select().from(hermesProfiles);
   const profileByName = new Map(allProfiles.map((p) => [p.profileName, p]));
@@ -119,14 +111,11 @@ async function main() {
       .select()
       .from(chatRooms)
       .where(eq(chatRooms.channelId, channel.id));
-    const officeRoom = channelRooms.find((r) => r.kind === 'office');
+    const officeRoom = channelRooms.find((r) => r.kind === "office");
     const roomByName = new Map(channelRooms.map((r) => [r.name, r]));
 
     // Fetch existing NPCs for this channel
-    const existingNpcs = await db
-      .select()
-      .from(npcs)
-      .where(eq(npcs.channelId, channel.id));
+    const existingNpcs = await db.select().from(npcs).where(eq(npcs.channelId, channel.id));
     const existingProfileIds = new Set(existingNpcs.map((n) => n.hermesProfileId));
     const npcIdByProfile = new Map<string, string>();
 
@@ -154,7 +143,7 @@ async function main() {
           channelId: channel.id,
           name: profile.displayName || profile.profileName,
           hermesProfileId: profile.id,
-          adapterType: 'hermes',
+          adapterType: "hermes",
           active: true,
           createdAt: nowForDb(),
           updatedAt: nowForDb(),
@@ -175,16 +164,16 @@ async function main() {
           .where(
             and(
               eq(chatRoomMembers.roomId, officeRoom.id),
-              eq(chatRoomMembers.memberKind, 'npc'),
-              eq(chatRoomMembers.memberId, npcId)
-            )
+              eq(chatRoomMembers.memberKind, "npc"),
+              eq(chatRoomMembers.memberId, npcId),
+            ),
           )
           .limit(1);
 
         if (!existing) {
           await db.insert(chatRoomMembers).values({
             roomId: officeRoom.id,
-            memberKind: 'npc',
+            memberKind: "npc",
             memberId: npcId,
             joinedAt: nowForDb(),
           });
@@ -211,16 +200,16 @@ async function main() {
           .where(
             and(
               eq(chatRoomMembers.roomId, targetRoom.id),
-              eq(chatRoomMembers.memberKind, 'npc'),
-              eq(chatRoomMembers.memberId, npcId)
-            )
+              eq(chatRoomMembers.memberKind, "npc"),
+              eq(chatRoomMembers.memberId, npcId),
+            ),
           )
           .limit(1);
 
         if (!existing) {
           await db.insert(chatRoomMembers).values({
             roomId: targetRoom.id,
-            memberKind: 'npc',
+            memberKind: "npc",
             memberId: npcId,
             joinedAt: nowForDb(),
           });
@@ -234,14 +223,16 @@ async function main() {
     console.log(`  * Seating unplaced NPCs in ${channelName}...`);
     const seatResult = await placeUnplacedNpcs(channel.id);
     console.log(
-      `    Seating result: seated=${seatResult.seated}, standing=${seatResult.standing}, failed=${seatResult.failed}\n`
+      `    Seating result: seated=${seatResult.seated}, standing=${seatResult.standing}, failed=${seatResult.failed}\n`,
     );
   }
 
-  console.log(`\n>>> Done! Created ${totalNpcsCreated} new NPCs and ${totalRoomMembersCreated} room memberships.`);
+  console.log(
+    `\n>>> Done! Created ${totalNpcsCreated} new NPCs and ${totalRoomMembersCreated} room memberships.`,
+  );
 }
 
 main().catch((err) => {
-  console.error('Fatal error during NPC integration:', err);
+  console.error("Fatal error during NPC integration:", err);
   process.exit(1);
 });

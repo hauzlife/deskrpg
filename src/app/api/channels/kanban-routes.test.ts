@@ -467,7 +467,9 @@ test("assignee validation — sleeping NPCs and other channels' NPCs are 400 ass
   assert.deepEqual(polled, []);
 
   // Created without an assignee, it receives a resolved active default employee and neutral priority.
-  const none = await createTask(routes, seed.ownerId, seed.channelId, { title: "Assigned by default" });
+  const none = await createTask(routes, seed.ownerId, seed.channelId, {
+    title: "Assigned by default",
+  });
   assert.equal(none.status, 201);
   assert.equal(none.body.task.assignee, "sophie");
   assert.equal(none.body.task.priority, "5");

@@ -311,7 +311,13 @@ export default function ChatInput({
           type="button"
           onClick={toggleRecording}
           disabled={disabled || isTranscribing}
-          title={isRecording ? "Parar gravação" : isTranscribing ? "Transcrevendo via Metal..." : "Gravar voz (STT Metal)"}
+          title={
+            isRecording
+              ? "Parar gravação"
+              : isTranscribing
+                ? "Transcrevendo via Metal..."
+                : "Gravar voz (STT Metal)"
+          }
           className={`p-2 rounded-lg shrink-0 self-end transition-colors border ${
             isRecording
               ? "bg-danger text-white border-danger animate-pulse"

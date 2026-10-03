@@ -9,15 +9,18 @@ Documento oficial de arquitetura, fluxos de trabalho e motores autônomos da HIV
 Todos os **7 mundos funcionais** do DeskRPG (`C-Suite`, `Engineering`, `Product`, `Operations`, `Creative/GTM`, `Infrastructure`, `Knowledge`) estão conectados ao Gateway local com **acesso unificado e seletor ativo**:
 
 ### A. Boards de Projeto (Entregas e Código de Produto)
-| Board Slug | Workspace / Repositório | Escopo de Produto |
-| :--- | :--- | :--- |
-| **`hot-telegram`** (242 tasks) | `/Users/anonymous/Projects/hauzhouse/hot/hot-telegram` | Motor de monetização, tráfego, billing e bots de Telegram (consolidado). |
-| **`mystelia`** (91 tasks) | `/Users/anonymous/Projects/hauzhouse/esoteric/mystelia` | Aplicação web/API Django, motor astrológico, checkout e landing pages. |
-| **`bloopu`** (63 tasks) | `/Users/anonymous/Projects/hauzhouse/crypto` | Aplicação e serviços crypto (`bloopu-frontend` e `bloopu-backend`). |
-| **`social`** (60 tasks) | `/Users/anonymous/Projects/hauzhouse/social` | Operação orgânica em redes sociais, automação de mídia e distribuição. |
+
+| Board Slug                     | Workspace / Repositório                                 | Escopo de Produto                                                        |
+| :----------------------------- | :------------------------------------------------------ | :----------------------------------------------------------------------- |
+| **`hot-telegram`** (242 tasks) | `/Users/anonymous/Projects/hauzhouse/hot/hot-telegram`  | Motor de monetização, tráfego, billing e bots de Telegram (consolidado). |
+| **`mystelia`** (91 tasks)      | `/Users/anonymous/Projects/hauzhouse/esoteric/mystelia` | Aplicação web/API Django, motor astrológico, checkout e landing pages.   |
+| **`bloopu`** (63 tasks)        | `/Users/anonymous/Projects/hauzhouse/crypto`            | Aplicação e serviços crypto (`bloopu-frontend` e `bloopu-backend`).      |
+| **`social`** (60 tasks)        | `/Users/anonymous/Projects/hauzhouse/social`            | Operação orgânica em redes sociais, automação de mídia e distribuição.   |
 
 ### B. Boards de Domínio (Vida Contínua dos Squads)
+
 Cada canal tem seu board próprio para gestão de débito técnico, refinamento e processos que não poluem o backlog de código:
+
 - `csuite-ops` (C-Suite) | `eng-ops` (Engineering) | `product-ops` (Product)
 - `ops-ops` (Operations) | `gtm-ops` (Creative/GTM) | `infra-ops` (Infrastructure) | `knowledge-ops` (Knowledge)
 
@@ -28,9 +31,10 @@ Cada canal tem seu board próprio para gestão de débito técnico, refinamento 
 O roster das 39 almas foi alocado nas 7 sedes temáticas com renderização 3D nativa (`executive`, `tech`, `agency`, `trading`, `publishing`) e assentos físicos mapeados (`placeUnplacedNpcs`).
 
 ### Almas Conectoras (Cross-Functional Triad):
-- **`Chief-of-Staff`** → Atua em **C-Suite** *(estratégia/diretoria)* **E** em **Operations** *(cadência/execução)*.
-- **`Product-Manager`** → Atua em **Product** *(especificações)*, em **Operations** *(priorização)* **E** em **Engineering** *(desbloqueio técnico)*.
-- **`Technical-Architect`** → Atua em **Infrastructure** *(design de sistemas)* **E** em **Engineering** *(code review e integridade)*.
+
+- **`Chief-of-Staff`** → Atua em **C-Suite** _(estratégia/diretoria)_ **E** em **Operations** _(cadência/execução)_.
+- **`Product-Manager`** → Atua em **Product** _(especificações)_, em **Operations** _(priorização)_ **E** em **Engineering** _(desbloqueio técnico)_.
+- **`Technical-Architect`** → Atua em **Infrastructure** _(design de sistemas)_ **E** em **Engineering** _(code review e integridade)_.
 
 ---
 
@@ -67,12 +71,12 @@ Para a empresa rodar continuamente sem intervenção manual, a esteira opera sob
 
 Os 4 sentinelas estão cadastrados no DeskRPG (`cron_job_origins`) e rodam nos perfis oficiais dos agentes:
 
-| Canal | Sala | Agente (Perfil) | Sentinela / Job ID | Frequência | Ação Autônoma |
-| :--- | :--- | :--- | :---: | :---: | :--- |
-| **Infrastructure** | `NOC` | `site-reliability-engineer` | `0b680dab507a` | **A cada 1h** | Monitora saúde de VPS, endpoints, filas de webhooks e erros 500. Abre **[INCIDENT-P0]** no board se detectar anomalia. |
-| **Operations** | `War Room` | `qa-engineer` | `569c5f72f23e` | **A cada 2h** | Executa suítes de testes (`hot-telegram`, `mystelia`). Agrupa causas raízes e cria cards **[QA-WATCHDOG]** com stacktrace. |
-| **Operations** | `Ops Control` | `implementation-planner` | `264409207812` | **A cada 6h** | Inspeciona boards de projeto e domínio. Se houver menos de 3 cards em todo/ready, decompõe tarefas atômicas e repõe o backlog. |
-| **Creative/GTM** | `Campaigns` | `seo-specialist` | `f3ce2e8cbdfb` | **A cada 12h** | Varre sitemaps, páginas 404 e tags de conversão nos sites. Abre cards de ajuste de SEO/Funil. |
+| Canal              | Sala          | Agente (Perfil)             | Sentinela / Job ID |   Frequência   | Ação Autônoma                                                                                                                  |
+| :----------------- | :------------ | :-------------------------- | :----------------: | :------------: | :----------------------------------------------------------------------------------------------------------------------------- |
+| **Infrastructure** | `NOC`         | `site-reliability-engineer` |   `0b680dab507a`   | **A cada 1h**  | Monitora saúde de VPS, endpoints, filas de webhooks e erros 500. Abre **[INCIDENT-P0]** no board se detectar anomalia.         |
+| **Operations**     | `War Room`    | `qa-engineer`               |   `569c5f72f23e`   | **A cada 2h**  | Executa suítes de testes (`hot-telegram`, `mystelia`). Agrupa causas raízes e cria cards **[QA-WATCHDOG]** com stacktrace.     |
+| **Operations**     | `Ops Control` | `implementation-planner`    |   `264409207812`   | **A cada 6h**  | Inspeciona boards de projeto e domínio. Se houver menos de 3 cards em todo/ready, decompõe tarefas atômicas e repõe o backlog. |
+| **Creative/GTM**   | `Campaigns`   | `seo-specialist`            |   `f3ce2e8cbdfb`   | **A cada 12h** | Varre sitemaps, páginas 404 e tags de conversão nos sites. Abre cards de ajuste de SEO/Funil.                                  |
 
 ---
 
@@ -88,6 +92,7 @@ Os 4 sentinelas estão cadastrados no DeskRPG (`cron_job_origins`) e rodam nos p
 ## 6. O Papel do Soberano (Você)
 
 Você **não** gerencia tickets, não arrasta cards e não digita tarefas operacionais. Seu papel se resume a:
+
 1. **Acompanhar a Telemetria:** Olhar as salas e a movimentação visual no DeskRPG.
 2. **Definir a Meta (North Star):** Quando quiser uma iniciativa nova, dizer o objetivo no **C-Suite** ou no **Operations → Ops Control**.
 3. **Revisar Gates de Produção:** Autorizar o merge final para as branches de produção quando o QA e o Verifier derem o sinal verde.

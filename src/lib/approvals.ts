@@ -20,7 +20,11 @@ import type { CreateTaskBody } from "@/lib/hermes/deskrpg-plugin-types";
 import { DEFAULT_TASK_PRIORITY } from "@/lib/kanban-defaults";
 import { orderApprovalBatch } from "@/lib/approval-batch-order";
 import type { KanbanChannelContext } from "@/lib/kanban-access";
-import { defaultReviewPolicy, resolveAssignee, resolveDefaultTaskAssignee } from "@/lib/kanban-access";
+import {
+  defaultReviewPolicy,
+  resolveAssignee,
+  resolveDefaultTaskAssignee,
+} from "@/lib/kanban-access";
 import { requestEmitRoomMessage } from "@/lib/automation-registry";
 import { appendRoomMessage, ensureOfficeRoom } from "@/lib/chat-rooms";
 import { getChannelOwnerId } from "@/lib/chat-rooms";

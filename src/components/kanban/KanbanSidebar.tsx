@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useT } from "@/lib/i18n";
 import { X, KanbanSquare } from "lucide-react";
 import { createKanbanApi } from "./kanban-api";
 import { useSelectedBoard } from "./ProjectPicker";
 import { useProjectViewState } from "./use-project-view-state";
 import { computeOperationalMetrics } from "@/lib/kanban-metrics";
-import type { KanbanBoard, KanbanRunsPage, KanbanStatusTransitionsPage } from "@/lib/hermes/deskrpg-plugin-types";
+import type {
+  KanbanBoard,
+  KanbanRunsPage,
+  KanbanStatusTransitionsPage,
+} from "@/lib/hermes/deskrpg-plugin-types";
 import type { BoardBlocker } from "./kanban-view-model";
 import KanbanListView from "./KanbanListView";
 import KanbanCalendarView from "./KanbanCalendarView";
@@ -20,7 +24,11 @@ interface KanbanSidebarProps {
   onConnectGateway?: () => void;
 }
 
-export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: KanbanSidebarProps) {
+export default function KanbanSidebar({
+  channelId,
+  onClose,
+  onConnectGateway: _onConnectGateway,
+}: KanbanSidebarProps) {
   const t = useT();
   const { selected: selectedBoard, select: selectBoard } = useSelectedBoard(channelId, []);
   const api = createKanbanApi(channelId, undefined, selectedBoard ?? undefined);
@@ -33,9 +41,13 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
   const [transitionsPage, setTransitionsPage] = useState<KanbanStatusTransitionsPage | null>(null);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [now] = useState(() => Date.now());
 
-  const { state: viewState, update: updateView, setFilter: setViewFilter } = useProjectViewState(channelId);
+  const {
+    state: viewState,
+    update: updateView,
+    setFilter: _setViewFilter,
+  } = useProjectViewState(channelId);
   const includeArchived = viewState.filter.includeArchived;
 
   const reload = useCallback(async () => {
@@ -60,29 +72,49 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
   }, [reload]);
 
   // Timeline data
-  const timelineWindow = { fromMs: Date.now() - 7 * 24 * 60 * 60 * 1000, toMs: Date.now() };
+  const timelineWindow = useMemo(() => {
+    const to = Date.now();
+    return { fromMs: to - 7 * 24 * 60 * 60 * 1000, toMs: to };
+  }, []);
 
   useEffect(() => {
     if (!status?.capabilities?.includes("kanban_views")) return;
     setRunsLoading(true);
-    api.runs({ from: Math.floor(timelineWindow.fromMs / 1000), to: Math.ceil(timelineWindow.toMs / 1000) })
+    api
+      .runs({
+        from: Math.floor(timelineWindow.fromMs / 1000),
+        to: Math.ceil(timelineWindow.toMs / 1000),
+      })
       .then(setRunsPage)
-      .catch(() => setRunsPage(null))
+      .catch((err) => {
+        setRunsPage(null);
+        setRunsError(String(err));
+      })
       .finally(() => setRunsLoading(false));
-  }, [api, status?.capabilities]);
+  }, [api, status?.capabilities, timelineWindow.fromMs, timelineWindow.toMs]);
 
   useEffect(() => {
     if (!status?.capabilities?.includes("kanban_task_events")) return;
-    api.statusTransitions({ from: Math.floor(timelineWindow.fromMs / 1000), to: Math.ceil(timelineWindow.toMs / 1000) })
+    api
+      .statusTransitions({
+        from: Math.floor(timelineWindow.fromMs / 1000),
+        to: Math.ceil(timelineWindow.toMs / 1000),
+      })
       .then(setTransitionsPage)
       .catch(() => setTransitionsPage(null));
-  }, [api, status?.capabilities]);
+  }, [api, status?.capabilities, timelineWindow.fromMs, timelineWindow.toMs]);
 
-  const allTasks = board ? (board.columns || []).flatMap(c => c.tasks) : [];
+  const allTasks = board ? (board.columns || []).flatMap((c) => c.tasks) : [];
   const visibleRuns = runsPage?.runs || [];
   const visibleTransitions = transitionsPage?.events || [];
 
-  const metrics = computeOperationalMetrics(visibleRuns, allTasks, new Set(), timelineWindow, visibleTransitions);
+  const metrics = computeOperationalMetrics(
+    visibleRuns,
+    allTasks,
+    new Set(),
+    timelineWindow,
+    visibleTransitions,
+  );
 
   return (
     <div className="fixed inset-y-0 right-0 w-96 bg-bg border-l border-border flex flex-col z-50">
@@ -105,7 +137,7 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
           <div className="p-4 space-y-6">
             {/* View selector */}
             <div className="flex gap-2">
-              {["list", "calendar", "timeline"].map(mode => (
+              {["list", "calendar", "timeline"].map((mode) => (
                 <button
                   key={mode}
                   onClick={() => updateView({ viewMode: mode as any })}
@@ -169,7 +201,10 @@ export default function KanbanSidebar({ channelId, onClose, onConnectGateway }: 
       </div>
 
       <div className="border-t border-border p-4 flex gap-2">
-        <button onClick={() => selectBoard(null)} className="flex-1 py-2 text-sm bg-surface-raised hover:bg-surface rounded">
+        <button
+          onClick={() => selectBoard(null)}
+          className="flex-1 py-2 text-sm bg-surface-raised hover:bg-surface rounded"
+        >
           {t("kanban.changeBoard")}
         </button>
         <button onClick={onClose} className="flex-1 py-2 text-sm bg-primary text-white rounded">

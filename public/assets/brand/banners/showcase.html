@@ -1,357 +1,365 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DeskRPG — Visual Kit & Conversion Banners Showcase (Q4)</title>
-  <style>
-    :root {
-      --color-primary: #365e4b;
-      --color-primary-light: #426c54;
-      --color-primary-hover: #294a3a;
-      --color-primary-muted: #e6eee2;
-      --color-accent-neon: #4ade80;
-      --color-accent-gold: #f59e0b;
-      --text: #09223f;
-      --text-secondary: #3f4346;
-      --text-muted: #526b5e;
-      --surface-bg: #eff7f1;
-      --surface-card: #ffffff;
-      --border-subtle: #d9e7dd;
-      --radius: 8px;
-      --shadow: 0 4px 12px rgba(9, 34, 63, 0.08);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background-color: var(--surface-bg);
-      color: var(--text);
-      line-height: 1.5;
-      padding: 40px 24px;
-    }
-    .container {
-      max-width: 1240px;
-      margin: 0 auto;
-    }
-    header {
-      margin-bottom: 40px;
-      padding-bottom: 24px;
-      border-bottom: 2px solid var(--border-subtle);
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-    }
-    .brand-title h1 {
-      font-size: 32px;
-      font-weight: 800;
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .badge {
-      background: var(--color-primary);
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-      padding: 4px 10px;
-      border-radius: var(--radius);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .brand-title p {
-      color: var(--text-secondary);
-      font-size: 16px;
-      margin-top: 6px;
-    }
-    .meta-tag {
-      font-family: monospace;
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-    section {
-      margin-bottom: 48px;
-    }
-    h2 {
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 18px;
-      color: var(--color-primary);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .swatches-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
-    }
-    .swatch-card {
-      background: var(--surface-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 12px;
-      box-shadow: var(--shadow);
-    }
-    .swatch-preview {
-      height: 70px;
-      border-radius: 4px;
-      margin-bottom: 10px;
-      border: 1px solid rgba(0,0,0,0.06);
-    }
-    .swatch-name {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .swatch-hex {
-      font-family: monospace;
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .swatch-wcag {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--color-primary);
-      margin-top: 4px;
-    }
-    .banner-card {
-      background: var(--surface-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 28px;
-      box-shadow: var(--shadow);
-    }
-    .banner-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 14px;
-    }
-    .banner-title {
-      font-size: 16px;
-      font-weight: 700;
-    }
-    .banner-dims {
-      font-family: monospace;
-      font-size: 13px;
-      background: var(--color-primary-muted);
-      color: var(--color-primary);
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-weight: 600;
-    }
-    .banner-render {
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      overflow: hidden;
-      background: #000;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    .banner-render img, .banner-render svg {
-      width: 100%;
-      height: auto;
-      display: block;
-    }
-    .button-preview-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-      align-items: center;
-      background: var(--surface-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 24px;
-    }
-    .btn {
-      padding: 10px 20px;
-      border-radius: var(--radius);
-      font-size: 14px;
-      font-weight: 700;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s ease;
-    }
-    .btn-primary {
-      background: var(--color-primary);
-      color: #fff;
-    }
-    .btn-primary:hover {
-      background: var(--color-primary-hover);
-    }
-    .btn-neon {
-      background: var(--color-accent-neon);
-      color: var(--text);
-    }
-    .btn-neon:hover {
-      filter: brightness(0.92);
-    }
-    .btn-outline {
-      background: transparent;
-      color: var(--color-primary);
-      border: 1.5px solid var(--color-primary);
-    }
-    .btn-secondary {
-      background: var(--color-primary-muted);
-      color: var(--color-primary);
-    }
-    footer {
-      margin-top: 60px;
-      padding-top: 24px;
-      border-top: 1px solid var(--border-subtle);
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-muted);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <div class="brand-title">
-        <h1>DeskRPG <span class="badge">Visual Kit & Banners v2.1</span></h1>
-        <p>GTM Campaign Visuals & Conversion Banners for Dante Labs · Hermes Agent Ecosystem</p>
-      </div>
-      <div class="meta-tag">
-        Board: gtm-ops · Task: t_d398a2df · Assignee: brand-designer
-      </div>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DeskRPG — Visual Kit & Conversion Banners Showcase (Q4)</title>
+    <style>
+      :root {
+        --color-primary: #365e4b;
+        --color-primary-light: #426c54;
+        --color-primary-hover: #294a3a;
+        --color-primary-muted: #e6eee2;
+        --color-accent-neon: #4ade80;
+        --color-accent-gold: #f59e0b;
+        --text: #09223f;
+        --text-secondary: #3f4346;
+        --text-muted: #526b5e;
+        --surface-bg: #eff7f1;
+        --surface-card: #ffffff;
+        --border-subtle: #d9e7dd;
+        --radius: 8px;
+        --shadow: 0 4px 12px rgba(9, 34, 63, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: var(--surface-bg);
+        color: var(--text);
+        line-height: 1.5;
+        padding: 40px 24px;
+      }
+      .container {
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+      header {
+        margin-bottom: 40px;
+        padding-bottom: 24px;
+        border-bottom: 2px solid var(--border-subtle);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .brand-title h1 {
+        font-size: 32px;
+        font-weight: 800;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .badge {
+        background: var(--color-primary);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: var(--radius);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .brand-title p {
+        color: var(--text-secondary);
+        font-size: 16px;
+        margin-top: 6px;
+      }
+      .meta-tag {
+        font-family: monospace;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      section {
+        margin-bottom: 48px;
+      }
+      h2 {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 18px;
+        color: var(--color-primary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .swatches-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+      }
+      .swatch-card {
+        background: var(--surface-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius);
+        padding: 12px;
+        box-shadow: var(--shadow);
+      }
+      .swatch-preview {
+        height: 70px;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+      .swatch-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+      }
+      .swatch-hex {
+        font-family: monospace;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .swatch-wcag {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-primary);
+        margin-top: 4px;
+      }
+      .banner-card {
+        background: var(--surface-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius);
+        padding: 20px;
+        margin-bottom: 28px;
+        box-shadow: var(--shadow);
+      }
+      .banner-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .banner-title {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .banner-dims {
+        font-family: monospace;
+        font-size: 13px;
+        background: var(--color-primary-muted);
+        color: var(--color-primary);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      .banner-render {
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: #000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .banner-render img,
+      .banner-render svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .button-preview-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        background: var(--surface-card);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius);
+        padding: 24px;
+      }
+      .btn {
+        padding: 10px 20px;
+        border-radius: var(--radius);
+        font-size: 14px;
+        font-weight: 700;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+      }
+      .btn-primary {
+        background: var(--color-primary);
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: var(--color-primary-hover);
+      }
+      .btn-neon {
+        background: var(--color-accent-neon);
+        color: var(--text);
+      }
+      .btn-neon:hover {
+        filter: brightness(0.92);
+      }
+      .btn-outline {
+        background: transparent;
+        color: var(--color-primary);
+        border: 1.5px solid var(--color-primary);
+      }
+      .btn-secondary {
+        background: var(--color-primary-muted);
+        color: var(--color-primary);
+      }
+      footer {
+        margin-top: 60px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-subtle);
+        text-align: center;
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="brand-title">
+          <h1>DeskRPG <span class="badge">Visual Kit & Banners v2.1</span></h1>
+          <p>GTM Campaign Visuals & Conversion Banners for Dante Labs · Hermes Agent Ecosystem</p>
+        </div>
+        <div class="meta-tag">Board: gtm-ops · Task: t_d398a2df · Assignee: brand-designer</div>
+      </header>
 
-    <!-- Color Palette Section -->
-    <section>
-      <h2>🎨 Brand Color Tokens (Q4 Aligned)</h2>
-      <div class="swatches-grid">
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #365e4b;"></div>
-          <div class="swatch-name">Primary Office Green</div>
-          <div class="swatch-hex">#365e4b</div>
-          <div class="swatch-wcag">AAA (6.2:1) on White</div>
+      <!-- Color Palette Section -->
+      <section>
+        <h2>🎨 Brand Color Tokens (Q4 Aligned)</h2>
+        <div class="swatches-grid">
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #365e4b"></div>
+            <div class="swatch-name">Primary Office Green</div>
+            <div class="swatch-hex">#365e4b</div>
+            <div class="swatch-wcag">AAA (6.2:1) on White</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #426c54"></div>
+            <div class="swatch-name">Primary Light</div>
+            <div class="swatch-hex">#426c54</div>
+            <div class="swatch-wcag">AA (4.8:1) on White</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #294a3a"></div>
+            <div class="swatch-name">Primary Hover</div>
+            <div class="swatch-hex">#294a3a</div>
+            <div class="swatch-wcag">AAA (8.8:1) on White</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #e6eee2"></div>
+            <div class="swatch-name">Primary Muted</div>
+            <div class="swatch-hex">#e6eee2</div>
+            <div class="swatch-wcag">AAA (18.2:1) on Navy</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #4ade80"></div>
+            <div class="swatch-name">Accent Neon Green</div>
+            <div class="swatch-hex">#4ade80</div>
+            <div class="swatch-wcag">AAA (14.1:1) on Navy</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #f59e0b"></div>
+            <div class="swatch-name">Accent Partner Gold</div>
+            <div class="swatch-hex">#f59e0b</div>
+            <div class="swatch-wcag">AAA (9.8:1) on Navy</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #09223f"></div>
+            <div class="swatch-name">Brand Navy Text</div>
+            <div class="swatch-hex">#09223f</div>
+            <div class="swatch-wcag">AAA (16.5:1) on White</div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-preview" style="background: #eff7f1"></div>
+            <div class="swatch-name">Surface Canvas</div>
+            <div class="swatch-hex">#eff7f1</div>
+            <div class="swatch-wcag">AAA (15.5:1) on Navy</div>
+          </div>
         </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #426c54;"></div>
-          <div class="swatch-name">Primary Light</div>
-          <div class="swatch-hex">#426c54</div>
-          <div class="swatch-wcag">AA (4.8:1) on White</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #294a3a;"></div>
-          <div class="swatch-name">Primary Hover</div>
-          <div class="swatch-hex">#294a3a</div>
-          <div class="swatch-wcag">AAA (8.8:1) on White</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #e6eee2;"></div>
-          <div class="swatch-name">Primary Muted</div>
-          <div class="swatch-hex">#e6eee2</div>
-          <div class="swatch-wcag">AAA (18.2:1) on Navy</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #4ade80;"></div>
-          <div class="swatch-name">Accent Neon Green</div>
-          <div class="swatch-hex">#4ade80</div>
-          <div class="swatch-wcag">AAA (14.1:1) on Navy</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #f59e0b;"></div>
-          <div class="swatch-name">Accent Partner Gold</div>
-          <div class="swatch-hex">#f59e0b</div>
-          <div class="swatch-wcag">AAA (9.8:1) on Navy</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #09223f;"></div>
-          <div class="swatch-name">Brand Navy Text</div>
-          <div class="swatch-hex">#09223f</div>
-          <div class="swatch-wcag">AAA (16.5:1) on White</div>
-        </div>
-        <div class="swatch-card">
-          <div class="swatch-preview" style="background: #eff7f1;"></div>
-          <div class="swatch-name">Surface Canvas</div>
-          <div class="swatch-hex">#eff7f1</div>
-          <div class="swatch-wcag">AAA (15.5:1) on Navy</div>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Interactive Conversion CTA Preview -->
-    <section>
-      <h2>🔘 Conversion CTA Buttons (8px Radius Cap)</h2>
-      <div class="button-preview-row">
-        <button class="btn btn-primary">Deploy on Hostinger →</button>
-        <button class="btn btn-neon">1-Click Launch ⚡</button>
-        <button class="btn btn-outline">Live Office Preview ↗</button>
-        <button class="btn btn-secondary">Documentation</button>
-      </div>
-    </section>
+      <!-- Interactive Conversion CTA Preview -->
+      <section>
+        <h2>🔘 Conversion CTA Buttons (8px Radius Cap)</h2>
+        <div class="button-preview-row">
+          <button class="btn btn-primary">Deploy on Hostinger →</button>
+          <button class="btn btn-neon">1-Click Launch ⚡</button>
+          <button class="btn btn-outline">Live Office Preview ↗</button>
+          <button class="btn btn-secondary">Documentation</button>
+        </div>
+      </section>
 
-    <!-- Banners Suite Showcase -->
-    <section>
-      <h2>🖼️ Production Conversion Banners Suite</h2>
+      <!-- Banners Suite Showcase -->
+      <section>
+        <h2>🖼️ Production Conversion Banners Suite</h2>
 
-      <!-- Banner 1 -->
-      <div class="banner-card">
-        <div class="banner-header">
-          <div class="banner-title">1. Hostinger 1-Click VPS Conversion Banner (Social / OpenGraph)</div>
-          <div class="banner-dims">1200 × 630 px · SVG</div>
+        <!-- Banner 1 -->
+        <div class="banner-card">
+          <div class="banner-header">
+            <div class="banner-title">
+              1. Hostinger 1-Click VPS Conversion Banner (Social / OpenGraph)
+            </div>
+            <div class="banner-dims">1200 × 630 px · SVG</div>
+          </div>
+          <div class="banner-render">
+            <img src="banner-hostinger-vps-1200x630.svg" alt="Hostinger VPS Banner" />
+          </div>
         </div>
-        <div class="banner-render">
-          <img src="banner-hostinger-vps-1200x630.svg" alt="Hostinger VPS Banner" />
-        </div>
-      </div>
 
-      <!-- Banner 2 -->
-      <div class="banner-card">
-        <div class="banner-header">
-          <div class="banner-title">2. GTM Hero & Repository Leaderboard Banner</div>
-          <div class="banner-dims">1200 × 400 px · SVG</div>
+        <!-- Banner 2 -->
+        <div class="banner-card">
+          <div class="banner-header">
+            <div class="banner-title">2. GTM Hero & Repository Leaderboard Banner</div>
+            <div class="banner-dims">1200 × 400 px · SVG</div>
+          </div>
+          <div class="banner-render">
+            <img src="banner-hero-leaderboard-1200x400.svg" alt="Hero Leaderboard Banner" />
+          </div>
         </div>
-        <div class="banner-render">
-          <img src="banner-hero-leaderboard-1200x400.svg" alt="Hero Leaderboard Banner" />
-        </div>
-      </div>
 
-      <!-- Banner 3 -->
-      <div class="banner-card">
-        <div class="banner-header">
-          <div class="banner-title">3. Social Square High-Engagement Card (X / LinkedIn / Discord)</div>
-          <div class="banner-dims">1080 × 1080 px · SVG</div>
+        <!-- Banner 3 -->
+        <div class="banner-card">
+          <div class="banner-header">
+            <div class="banner-title">
+              3. Social Square High-Engagement Card (X / LinkedIn / Discord)
+            </div>
+            <div class="banner-dims">1080 × 1080 px · SVG</div>
+          </div>
+          <div class="banner-render" style="max-width: 680px; margin: 0 auto">
+            <img src="banner-social-square-1080x1080.svg" alt="Social Square Banner" />
+          </div>
         </div>
-        <div class="banner-render" style="max-width: 680px; margin: 0 auto;">
-          <img src="banner-social-square-1080x1080.svg" alt="Social Square Banner" />
-        </div>
-      </div>
 
-      <!-- Banner 4 -->
-      <div class="banner-card">
-        <div class="banner-header">
-          <div class="banner-title">4. Compact Web Display Leaderboard Banner</div>
-          <div class="banner-dims">728 × 90 px · SVG</div>
+        <!-- Banner 4 -->
+        <div class="banner-card">
+          <div class="banner-header">
+            <div class="banner-title">4. Compact Web Display Leaderboard Banner</div>
+            <div class="banner-dims">728 × 90 px · SVG</div>
+          </div>
+          <div class="banner-render">
+            <img src="banner-leaderboard-728x90.svg" alt="Compact Leaderboard Banner" />
+          </div>
         </div>
-        <div class="banner-render">
-          <img src="banner-leaderboard-728x90.svg" alt="Compact Leaderboard Banner" />
-        </div>
-      </div>
 
-      <!-- Banner 5 -->
-      <div class="banner-card">
-        <div class="banner-header">
-          <div class="banner-title">5. Conversion Trust Seals & Badges Suite</div>
-          <div class="banner-dims">900 × 400 px · SVG</div>
+        <!-- Banner 5 -->
+        <div class="banner-card">
+          <div class="banner-header">
+            <div class="banner-title">5. Conversion Trust Seals & Badges Suite</div>
+            <div class="banner-dims">900 × 400 px · SVG</div>
+          </div>
+          <div class="banner-render">
+            <img src="conversion-badges-kit.svg" alt="Trust Badges Kit" />
+          </div>
         </div>
-        <div class="banner-render">
-          <img src="conversion-badges-kit.svg" alt="Trust Badges Kit" />
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <footer>
-      DeskRPG Brand Designer Handoff · Dante Labs Autonomous Creative Squad · All assets compliant with Dante Labs Brand System v2.0
-    </footer>
-  </div>
-</body>
+      <footer>
+        DeskRPG Brand Designer Handoff · Dante Labs Autonomous Creative Squad · All assets compliant
+        with Dante Labs Brand System v2.0
+      </footer>
+    </div>
+  </body>
 </html>

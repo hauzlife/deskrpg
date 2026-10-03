@@ -11,64 +11,64 @@
  * - HK-07: Bidirectional Starvation Hook (Instant backlog feeding on 0 active tasks)
  */
 
-import { db, chatRooms } from '@/db';
-import { eq, and } from 'drizzle-orm';
-import { appendRoomMessage } from '@/lib/chat-rooms';
-import type { RoomMessage } from '@/lib/chat-rooms-policy';
-import path from 'node:path';
-import os from 'node:os';
-import fs from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { db, chatRooms } from "@/db";
+import { eq, and } from "drizzle-orm";
+import { appendRoomMessage } from "@/lib/chat-rooms";
+import type { RoomMessage } from "@/lib/chat-rooms-policy";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
-export const PRODUCT_BOARDS = ['mystelia', 'hot-telegram', 'bloopu', 'social'] as const;
+export const PRODUCT_BOARDS = ["mystelia", "hot-telegram", "bloopu", "social"] as const;
 export const STARVATION_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes debounce
 export const lastStarvationTrigger = new Map<string, number>();
 
 export interface ProjectMapping {
   projectId: string;
   primaryPath: string;
-  defaultWorkspaceKind: 'worktree' | 'dir';
+  defaultWorkspaceKind: "worktree" | "dir";
 }
 
 export const CANONICAL_PROJECT_MAPPINGS: Record<string, ProjectMapping> = {
   mystelia: {
-    projectId: 'p_d0b4686c',
-    primaryPath: '/Users/anonymous/Projects/hauzhouse/esoteric/mystelia',
-    defaultWorkspaceKind: 'worktree',
+    projectId: "p_d0b4686c",
+    primaryPath: "/Users/anonymous/Projects/hauzhouse/esoteric/mystelia",
+    defaultWorkspaceKind: "worktree",
   },
   bloopu: {
-    projectId: 'p_55adf712',
-    primaryPath: '/Users/anonymous/Projects/hauzhouse/crypto',
-    defaultWorkspaceKind: 'dir',
+    projectId: "p_55adf712",
+    primaryPath: "/Users/anonymous/Projects/hauzhouse/crypto",
+    defaultWorkspaceKind: "dir",
   },
   social: {
-    projectId: 'p_f9791739',
-    primaryPath: '/Users/anonymous/Projects/hauzhouse/social',
-    defaultWorkspaceKind: 'worktree',
+    projectId: "p_f9791739",
+    primaryPath: "/Users/anonymous/Projects/hauzhouse/social",
+    defaultWorkspaceKind: "worktree",
   },
 };
 
 export function resolveHotTelegramProject(hintText?: string): ProjectMapping {
-  const lower = (hintText || '').toLowerCase();
+  const lower = (hintText || "").toLowerCase();
   if (
-    lower.includes('billing') ||
-    lower.includes('checkout') ||
-    lower.includes('payment') ||
-    lower.includes('rebeltransfer') ||
-    lower.includes('order') ||
-    lower.includes('pix')
+    lower.includes("billing") ||
+    lower.includes("checkout") ||
+    lower.includes("payment") ||
+    lower.includes("rebeltransfer") ||
+    lower.includes("order") ||
+    lower.includes("pix")
   ) {
     return {
-      projectId: 'p_c21aedb6',
-      primaryPath: '/Users/anonymous/Projects/hauzhouse/hot/hot-billing',
-      defaultWorkspaceKind: 'worktree',
+      projectId: "p_c21aedb6",
+      primaryPath: "/Users/anonymous/Projects/hauzhouse/hot/hot-billing",
+      defaultWorkspaceKind: "worktree",
     };
   }
   return {
-    projectId: 'p_8c9879cd',
-    primaryPath: '/Users/anonymous/Projects/hauzhouse/hot/hot-traffic',
-    defaultWorkspaceKind: 'worktree',
+    projectId: "p_8c9879cd",
+    primaryPath: "/Users/anonymous/Projects/hauzhouse/hot/hot-traffic",
+    defaultWorkspaceKind: "worktree",
   };
 }
 
@@ -78,17 +78,17 @@ export function resolveWorkspaceForTask(
     title?: string;
     body?: string;
     assignee?: string;
-    workspaceKind?: 'scratch' | 'worktree' | 'dir';
+    workspaceKind?: "scratch" | "worktree" | "dir";
     workspacePath?: string;
     projectId?: string;
-  }
+  },
 ): {
-  workspaceKind: 'scratch' | 'worktree' | 'dir';
+  workspaceKind: "scratch" | "worktree" | "dir";
   workspacePath: string | null;
   projectId: string | null;
 } {
   // If caller explicitly passed non-scratch workspaceKind and workspacePath, preserve it
-  if (spec.workspaceKind && spec.workspaceKind !== 'scratch' && spec.workspacePath) {
+  if (spec.workspaceKind && spec.workspaceKind !== "scratch" && spec.workspacePath) {
     return {
       workspaceKind: spec.workspaceKind,
       workspacePath: spec.workspacePath,
@@ -96,10 +96,10 @@ export function resolveWorkspaceForTask(
     };
   }
 
-  const combinedHint = `${spec.title ?? ''} ${spec.body ?? ''}`;
+  const combinedHint = `${spec.title ?? ""} ${spec.body ?? ""}`;
 
   // 1. Hot Telegram resolution
-  if (boardSlug === 'hot-telegram') {
+  if (boardSlug === "hot-telegram") {
     const mapping = resolveHotTelegramProject(combinedHint);
     return {
       workspaceKind: mapping.defaultWorkspaceKind,
@@ -120,13 +120,20 @@ export function resolveWorkspaceForTask(
 
   // 3. Fallback: Check board.json under ~/.hermes/kanban/boards/<boardSlug>/board.json
   try {
-    const boardJsonPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'board.json');
+    const boardJsonPath = path.join(
+      os.homedir(),
+      ".hermes",
+      "kanban",
+      "boards",
+      boardSlug,
+      "board.json",
+    );
     if (fs.existsSync(boardJsonPath)) {
-      const boardData = JSON.parse(fs.readFileSync(boardJsonPath, 'utf8'));
-      if (boardData.default_workdir && typeof boardData.default_workdir === 'string') {
-        const isGit = fs.existsSync(path.join(boardData.default_workdir, '.git'));
+      const boardData = JSON.parse(fs.readFileSync(boardJsonPath, "utf8"));
+      if (boardData.default_workdir && typeof boardData.default_workdir === "string") {
+        const isGit = fs.existsSync(path.join(boardData.default_workdir, ".git"));
         return {
-          workspaceKind: isGit ? 'worktree' : 'dir',
+          workspaceKind: isGit ? "worktree" : "dir",
           workspacePath: boardData.default_workdir,
           projectId: boardData.project_id || null,
         };
@@ -136,7 +143,7 @@ export function resolveWorkspaceForTask(
 
   // 4. Default fallback: keep scratch if no repo/worktree could be resolved
   return {
-    workspaceKind: spec.workspaceKind ?? 'scratch',
+    workspaceKind: spec.workspaceKind ?? "scratch",
     workspacePath: spec.workspacePath ?? null,
     projectId: spec.projectId ?? null,
   };
@@ -146,9 +153,11 @@ export function resolveWorkspaceForTask(
 export function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean }) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const nodeSqlite = require('node:sqlite');
+    const nodeSqlite = require("node:sqlite");
     if (nodeSqlite && nodeSqlite.DatabaseSync) {
-      const dbInstance = new nodeSqlite.DatabaseSync(dbPath, { readOnly: options?.readonly ?? false });
+      const dbInstance = new nodeSqlite.DatabaseSync(dbPath, {
+        readOnly: options?.readonly ?? false,
+      });
       return {
         prepare: (query: string) => {
           const stmt = dbInstance.prepare(query);
@@ -166,7 +175,7 @@ export function getSqliteDatabase(dbPath: string, options?: { readonly?: boolean
   }
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const BetterSqlite = require('better-sqlite3');
+  const BetterSqlite = require("better-sqlite3");
   return new BetterSqlite(dbPath, { readonly: options?.readonly ?? false });
 }
 
@@ -195,12 +204,14 @@ export interface ParsedSlice {
  */
 export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo | null {
   try {
-    const dbPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+    const dbPath = path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
     if (!fs.existsSync(dbPath)) return null;
 
     const sqlite = getSqliteDatabase(dbPath, { readonly: true });
     const row = sqlite
-      .prepare('SELECT summary, metadata FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1')
+      .prepare(
+        "SELECT summary, metadata FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1",
+      )
       .get(taskId) as { summary?: string | null; metadata?: string | null } | undefined;
 
     let parsedMeta: Record<string, unknown> | null = null;
@@ -213,12 +224,12 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
     }
 
     const artifacts: string[] = [];
-    if (parsedMeta?.artifact_pyramid && typeof parsedMeta.artifact_pyramid === 'string') {
+    if (parsedMeta?.artifact_pyramid && typeof parsedMeta.artifact_pyramid === "string") {
       artifacts.push(parsedMeta.artifact_pyramid);
     }
     if (Array.isArray(parsedMeta?.artifacts)) {
       for (const a of parsedMeta.artifacts) {
-        if (typeof a === 'string' && !artifacts.includes(a)) artifacts.push(a);
+        if (typeof a === "string" && !artifacts.includes(a)) artifacts.push(a);
       }
     }
 
@@ -226,11 +237,13 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
     if (artifacts.length === 0) {
       try {
         const taskRow = sqlite
-          .prepare('SELECT body, result FROM tasks WHERE id = ?')
+          .prepare("SELECT body, result FROM tasks WHERE id = ?")
           .get(taskId) as { body?: string | null; result?: string | null } | undefined;
-        
-        const combined = `${taskRow?.result ?? ''}\n${taskRow?.body ?? ''}`;
-        const match = combined.match(/(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/);
+
+        const combined = `${taskRow?.result ?? ""}\n${taskRow?.body ?? ""}`;
+        const match = combined.match(
+          /(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/,
+        );
         if (match && !artifacts.includes(match[1])) {
           artifacts.push(match[1]);
         }
@@ -252,49 +265,49 @@ export function readTaskRunInfo(boardSlug: string, taskId: string): TaskRunInfo 
 
 function matchTacticalRoom(
   rooms: Array<{ id: string; name: string }>,
-  assignee: string | null
+  assignee: string | null,
 ): { roomId: string; roomName: string } | null {
   if (rooms.length === 0) return null;
 
   const preferences: Record<string, string[]> = {
-    'security-engineer': ['Incident Response', 'NOC', 'Dev Lab'],
-    'site-reliability-engineer': ['Incident Response', 'War Room', 'NOC'],
-    debugger: ['War Room', 'Dev Lab', 'Incident Response'],
-    'qa-engineer': ['War Room', 'Dev Lab'],
-    verifier: ['War Room', 'Dev Lab', 'Product Office'],
-    reviewer: ['Dev Lab', 'Product Office', 'War Room'],
-    'backend-engineer': ['Dev Lab', 'Meeting Room'],
-    'frontend-engineer': ['Dev Lab', 'Meeting Room'],
-    'platform-engineer': ['Dev Lab', 'NOC'],
-    'technical-architect': ['Dev Lab', 'Incident Response', 'NOC'],
-    'implementation-planner': ['Ops Control', 'Product Office', 'Dev Lab'],
-    orchestrator: ['Ops Control', 'War Room', 'Boardroom'],
-    'kanban-strategist': ['Ops Control', 'Boardroom'],
-    'product-manager': ['Product Office', 'Ops Control', 'Dev Lab'],
-    'spec-driven-development': ['Product Office', 'Dev Lab'],
-    'ux-designer': ['Product Office', 'Brainstorm Room'],
-    'copy-editor': ['Campaigns', 'Studio'],
-    'brand-designer': ['Studio', 'Campaigns'],
-    'seo-specialist': ['Campaigns'],
-    writer: ['Campaigns', 'Studio'],
-    curator: ['Deep Thought', 'Library'],
-    wonderer: ['Deep Thought', 'Library'],
-    ceo: ['Boardroom', 'CFO Suite'],
-    cfo: ['CFO Suite', 'Boardroom'],
-    cto: ['Boardroom', 'Dev Lab'],
-    coo: ['Ops Control', 'Boardroom'],
+    "security-engineer": ["Incident Response", "NOC", "Dev Lab"],
+    "site-reliability-engineer": ["Incident Response", "War Room", "NOC"],
+    debugger: ["War Room", "Dev Lab", "Incident Response"],
+    "qa-engineer": ["War Room", "Dev Lab"],
+    verifier: ["War Room", "Dev Lab", "Product Office"],
+    reviewer: ["Dev Lab", "Product Office", "War Room"],
+    "backend-engineer": ["Dev Lab", "Meeting Room"],
+    "frontend-engineer": ["Dev Lab", "Meeting Room"],
+    "platform-engineer": ["Dev Lab", "NOC"],
+    "technical-architect": ["Dev Lab", "Incident Response", "NOC"],
+    "implementation-planner": ["Ops Control", "Product Office", "Dev Lab"],
+    orchestrator: ["Ops Control", "War Room", "Boardroom"],
+    "kanban-strategist": ["Ops Control", "Boardroom"],
+    "product-manager": ["Product Office", "Ops Control", "Dev Lab"],
+    "spec-driven-development": ["Product Office", "Dev Lab"],
+    "ux-designer": ["Product Office", "Brainstorm Room"],
+    "copy-editor": ["Campaigns", "Studio"],
+    "brand-designer": ["Studio", "Campaigns"],
+    "seo-specialist": ["Campaigns"],
+    writer: ["Campaigns", "Studio"],
+    curator: ["Deep Thought", "Library"],
+    wonderer: ["Deep Thought", "Library"],
+    ceo: ["Boardroom", "CFO Suite"],
+    cfo: ["CFO Suite", "Boardroom"],
+    cto: ["Boardroom", "Dev Lab"],
+    coo: ["Ops Control", "Boardroom"],
   };
 
-  const role = assignee?.trim().toLowerCase() ?? '';
+  const role = assignee?.trim().toLowerCase() ?? "";
   const preferredNames = preferences[role] ?? [
-    'Dev Lab',
-    'War Room',
-    'Ops Control',
-    'Incident Response',
-    'Product Office',
-    'Campaigns',
-    'Boardroom',
-    'Deep Thought',
+    "Dev Lab",
+    "War Room",
+    "Ops Control",
+    "Incident Response",
+    "Product Office",
+    "Campaigns",
+    "Boardroom",
+    "Deep Thought",
   ];
 
   for (const pName of preferredNames) {
@@ -310,14 +323,14 @@ function matchTacticalRoom(
  */
 export async function resolveTacticalRoomId(
   channelId: string,
-  assignee: string | null
+  assignee: string | null,
 ): Promise<{ roomId: string; roomName: string } | null> {
   // 1. Try Drizzle / @/db
   try {
     const rooms = await db
       .select({ id: chatRooms.id, name: chatRooms.name, kind: chatRooms.kind })
       .from(chatRooms)
-      .where(and(eq(chatRooms.channelId, channelId), eq(chatRooms.kind, 'group')));
+      .where(and(eq(chatRooms.channelId, channelId), eq(chatRooms.kind, "group")));
 
     if (rooms.length > 0) {
       return matchTacticalRoom(rooms, assignee);
@@ -325,7 +338,7 @@ export async function resolveTacticalRoomId(
   } catch {
     // Fallback to node:sqlite on ~/.deskrpg/data/deskrpg.db
     try {
-      const deskDbPath = path.join(os.homedir(), '.deskrpg', 'data', 'deskrpg.db');
+      const deskDbPath = path.join(os.homedir(), ".deskrpg", "data", "deskrpg.db");
       if (fs.existsSync(deskDbPath)) {
         const sqlite = getSqliteDatabase(deskDbPath, { readonly: true });
         const rows = sqlite
@@ -336,7 +349,7 @@ export async function resolveTacticalRoomId(
         }
       }
     } catch (e) {
-      console.warn('[autonomous-hooks] resolveTacticalRoomId fallback failed:', e);
+      console.warn("[autonomous-hooks] resolveTacticalRoomId fallback failed:", e);
     }
   }
 
@@ -347,83 +360,93 @@ export async function resolveTacticalRoomId(
  * Maps the completed role to the downstream consumer and action
  */
 export function resolveDownstreamHandoff(assignee: string | null): DownstreamHandoff {
-  const role = assignee?.trim().toLowerCase() ?? '';
+  const role = assignee?.trim().toLowerCase() ?? "";
 
   switch (role) {
-    case 'site-reliability-engineer':
+    case "site-reliability-engineer":
       return {
-        nextActor: '@backend-engineer @debugger',
-        actionRequired: 'Varredura de telemetria/anomalias concluída. Executar remediação física de serviços, bots e links.',
-        targetRoomName: 'NOC',
+        nextActor: "@backend-engineer @debugger",
+        actionRequired:
+          "Varredura de telemetria/anomalias concluída. Executar remediação física de serviços, bots e links.",
+        targetRoomName: "NOC",
       };
-    case 'security-engineer':
+    case "security-engineer":
       return {
-        nextActor: '@site-reliability-engineer @backend-engineer',
-        actionRequired: 'Auditoria de segurança concluída. Iniciar mitigação de vulnerabilidades e rotação de credenciais.',
-        targetRoomName: 'Incident Response',
+        nextActor: "@site-reliability-engineer @backend-engineer",
+        actionRequired:
+          "Auditoria de segurança concluída. Iniciar mitigação de vulnerabilidades e rotação de credenciais.",
+        targetRoomName: "Incident Response",
       };
-    case 'qa-engineer':
+    case "qa-engineer":
       return {
-        nextActor: '@debugger @backend-engineer',
-        actionRequired: 'Baterias de teste concluídas. Inspecionar falhas e aplicar correções de código.',
-        targetRoomName: 'War Room',
+        nextActor: "@debugger @backend-engineer",
+        actionRequired:
+          "Baterias de teste concluídas. Inspecionar falhas e aplicar correções de código.",
+        targetRoomName: "War Room",
       };
-    case 'backend-engineer':
-    case 'frontend-engineer':
+    case "backend-engineer":
+    case "frontend-engineer":
       return {
-        nextActor: '@reviewer',
-        actionRequired: 'Implementação de código concluída. Realizar code review e aprovação de PR.',
-        targetRoomName: 'Dev Lab',
+        nextActor: "@reviewer",
+        actionRequired:
+          "Implementação de código concluída. Realizar code review e aprovação de PR.",
+        targetRoomName: "Dev Lab",
       };
-    case 'reviewer':
+    case "reviewer":
       return {
-        nextActor: '@verifier',
-        actionRequired: 'Code review aprovado. Executar verificação de critérios de aceite.',
-        targetRoomName: 'Dev Lab',
+        nextActor: "@verifier",
+        actionRequired: "Code review aprovado. Executar verificação de critérios de aceite.",
+        targetRoomName: "Dev Lab",
       };
-    case 'verifier':
+    case "verifier":
       return {
-        nextActor: '@orchestrator',
-        actionRequired: 'Critérios de aceite validados com sucesso. Card pronto para fechamento e release.',
-        targetRoomName: 'Dev Lab',
+        nextActor: "@orchestrator",
+        actionRequired:
+          "Critérios de aceite validados com sucesso. Card pronto para fechamento e release.",
+        targetRoomName: "Dev Lab",
       };
-    case 'technical-architect':
+    case "technical-architect":
       return {
-        nextActor: '@backend-engineer @implementation-planner',
-        actionRequired: 'Decisões de arquitetura (ADR) publicadas. Pronto para decomposição e implementação.',
-        targetRoomName: 'Dev Lab',
+        nextActor: "@backend-engineer @implementation-planner",
+        actionRequired:
+          "Decisões de arquitetura (ADR) publicadas. Pronto para decomposição e implementação.",
+        targetRoomName: "Dev Lab",
       };
-    case 'spec-driven-development':
-    case 'product-manager':
+    case "spec-driven-development":
+    case "product-manager":
       return {
-        nextActor: '@implementation-planner @backend-engineer',
-        actionRequired: 'Especificações formais refinadas. Pronto para planejamento técnico e sprint.',
-        targetRoomName: 'Product Office',
+        nextActor: "@implementation-planner @backend-engineer",
+        actionRequired:
+          "Especificações formais refinadas. Pronto para planejamento técnico e sprint.",
+        targetRoomName: "Product Office",
       };
-    case 'implementation-planner':
+    case "implementation-planner":
       return {
-        nextActor: '@orchestrator',
-        actionRequired: 'Fatiamento de épics em tarefas atômicas concluído. Pronto para despacho no Kanban.',
-        targetRoomName: 'Ops Control',
+        nextActor: "@orchestrator",
+        actionRequired:
+          "Fatiamento de épics em tarefas atômicas concluído. Pronto para despacho no Kanban.",
+        targetRoomName: "Ops Control",
       };
-    case 'kanban-strategist':
+    case "kanban-strategist":
       return {
-        nextActor: '@orchestrator @coo',
-        actionRequired: 'Auditoria de fluxo e limites de WIP concluída. Ajustar gargalos de esteira.',
-        targetRoomName: 'Ops Control',
+        nextActor: "@orchestrator @coo",
+        actionRequired:
+          "Auditoria de fluxo e limites de WIP concluída. Ajustar gargalos de esteira.",
+        targetRoomName: "Ops Control",
       };
-    case 'copy-editor':
-    case 'writer':
+    case "copy-editor":
+    case "writer":
       return {
-        nextActor: '@brand-designer @seo-specialist',
-        actionRequired: 'Textos e copys finalizados. Integrar aos assets visuais e metatags de campanha.',
-        targetRoomName: 'Campaigns',
+        nextActor: "@brand-designer @seo-specialist",
+        actionRequired:
+          "Textos e copys finalizados. Integrar aos assets visuais e metatags de campanha.",
+        targetRoomName: "Campaigns",
       };
     default:
       return {
-        nextActor: '@orchestrator',
-        actionRequired: 'Entrega finalizada. Avaliar continuidade do épico e desdobramentos.',
-        targetRoomName: 'Ops Control',
+        nextActor: "@orchestrator",
+        actionRequired: "Entrega finalizada. Avaliar continuidade do épico e desdobramentos.",
+        targetRoomName: "Ops Control",
       };
   }
 }
@@ -444,59 +467,59 @@ export function parseArtifactPyramidSlices(pyramidPathOrIndex: string): ParsedSl
       return slices;
     }
 
-    const analysisDir = path.join(rootDir, '02-analysis');
+    const analysisDir = path.join(rootDir, "02-analysis");
     if (!fs.existsSync(analysisDir) || !fs.statSync(analysisDir).isDirectory()) {
       return slices;
     }
 
-    const files = fs.readdirSync(analysisDir).filter((f) => f.endsWith('.md'));
+    const files = fs.readdirSync(analysisDir).filter((f) => f.endsWith(".md"));
     for (const file of files) {
       const fullPath = path.join(analysisDir, file);
-      const content = fs.readFileSync(fullPath, 'utf8');
+      const content = fs.readFileSync(fullPath, "utf8");
 
       // Resolve destination board from filename or content
-      let targetBoard = '';
+      let targetBoard = "";
       const lowerFile = file.toLowerCase();
       const lowerHead = content.slice(0, 600).toLowerCase();
 
-      if (lowerFile.includes('mystelia') || lowerHead.includes('mystelia')) {
-        targetBoard = 'mystelia';
+      if (lowerFile.includes("mystelia") || lowerHead.includes("mystelia")) {
+        targetBoard = "mystelia";
       } else if (
-        lowerFile.includes('hot-telegram') ||
-        lowerFile.includes('hot') ||
-        lowerHead.includes('hot-telegram')
+        lowerFile.includes("hot-telegram") ||
+        lowerFile.includes("hot") ||
+        lowerHead.includes("hot-telegram")
       ) {
-        targetBoard = 'hot-telegram';
+        targetBoard = "hot-telegram";
       } else if (
-        lowerFile.includes('bloopu') ||
-        lowerFile.includes('crypto') ||
-        lowerHead.includes('bloopu')
+        lowerFile.includes("bloopu") ||
+        lowerFile.includes("crypto") ||
+        lowerHead.includes("bloopu")
       ) {
-        targetBoard = 'bloopu';
-      } else if (lowerFile.includes('social') || lowerHead.includes('social')) {
-        targetBoard = 'social';
+        targetBoard = "bloopu";
+      } else if (lowerFile.includes("social") || lowerHead.includes("social")) {
+        targetBoard = "social";
       }
 
       // Split into sections by H3 headers
       const sections = content.split(/\n###\s+/);
       for (let i = 1; i < sections.length; i++) {
         const sec = sections[i];
-        const lines = sec.trim().split('\n');
+        const lines = sec.trim().split("\n");
         const header = lines[0].trim();
-        const body = lines.slice(1).join('\n').trim();
+        const body = lines.slice(1).join("\n").trim();
 
-        const title = header.replace(/[`*]/g, '').trim();
+        const title = header.replace(/[`*]/g, "").trim();
 
         const assigneeMatch = body.match(/-\s*\*\*Atribuído a:\*\*\s*`?([a-zA-Z0-9_-]+)`?/i);
-        const assignee = assigneeMatch ? assigneeMatch[1] : 'backend-engineer';
+        const assignee = assigneeMatch ? assigneeMatch[1] : "backend-engineer";
 
         const priorityMatch = body.match(/-\s*\*\*Prioridade:\*\*\s*(P[0-9])/i);
         let priority = 5;
         if (priorityMatch) {
           const p = priorityMatch[1].toUpperCase();
-          if (p === 'P0') priority = 10;
-          else if (p === 'P1') priority = 8;
-          else if (p === 'P2') priority = 5;
+          if (p === "P0") priority = 10;
+          else if (p === "P1") priority = 8;
+          else if (p === "P2") priority = 5;
         }
 
         slices.push({
@@ -509,7 +532,7 @@ export function parseArtifactPyramidSlices(pyramidPathOrIndex: string): ParsedSl
       }
     }
   } catch (err) {
-    console.warn('[autonomous-hooks] Error parsing artifact pyramid slices:', err);
+    console.warn("[autonomous-hooks] Error parsing artifact pyramid slices:", err);
   }
   return slices;
 }
@@ -534,10 +557,10 @@ export async function executePostCompletionLifecycle(args: {
 
   // 1. Post to tactical room if available
   if (tacticalRoom) {
-    const summaryText = runInfo?.summary ? `\n> ${runInfo.summary}\n` : '';
+    const summaryText = runInfo?.summary ? `\n> ${runInfo.summary}\n` : "";
     const artifactLink = runInfo?.artifacts?.length
-      ? `\n📄 **Artefatos Gerados:**\n${runInfo.artifacts.map((a) => `• \`${a}\``).join('\n')}\n`
-      : '';
+      ? `\n📄 **Artefatos Gerados:**\n${runInfo.artifacts.map((a) => `• \`${a}\``).join("\n")}\n`
+      : "";
 
     const content = `✅ **[ENTREGA CONCLUÍDA]** \`${taskId}\` — ${cardTitle}
 ${summaryText}${artifactLink}
@@ -546,30 +569,39 @@ ${summaryText}${artifactLink}
     try {
       const message = await appendRoomMessage({
         roomId: tacticalRoom.roomId,
-        senderKind: 'system',
+        senderKind: "system",
         senderId: null,
-        senderName: 'Lifecycle Orchestrator',
+        senderName: "Lifecycle Orchestrator",
         content,
         notice: {
-          kind: 'card_done',
+          kind: "card_done",
           cardId: taskId,
           cardTitle,
           boardSlug,
-          npcName: assignee ?? 'system',
+          npcName: assignee ?? "system",
         },
       });
 
       if (emitRoomMessage) {
         emitRoomMessage(tacticalRoom.roomId, message);
       }
-      console.log(`[autonomous-hooks] Posted tactical handoff in "${tacticalRoom.roomName}" (${tacticalRoom.roomId})`);
+      console.log(
+        `[autonomous-hooks] Posted tactical handoff in "${tacticalRoom.roomName}" (${tacticalRoom.roomId})`,
+      );
     } catch (err) {
-      console.warn('[autonomous-hooks] Failed to post tactical message:', err);
+      console.warn("[autonomous-hooks] Failed to post tactical message:", err);
     }
   }
 
   // 2. HK-01 & Channel Board Dispatcher: Auto-Remediation / Slices / Child Tasks / Artifact Pyramid Ingestion
-  await dispatchAutomatedRemediation(boardSlug, taskId, cardTitle, runInfo?.metadata ?? {}, channelId, runInfo);
+  await dispatchAutomatedRemediation(
+    boardSlug,
+    taskId,
+    cardTitle,
+    runInfo?.metadata ?? {},
+    channelId,
+    runInfo,
+  );
 }
 
 /**
@@ -585,14 +617,14 @@ export async function executeReviewGateHandoff(args: {
   emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
 }): Promise<void> {
   const { channelId, boardSlug, taskId, cardTitle, assignee, emitRoomMessage } = args;
-  const tacticalRoom = await resolveTacticalRoomId(channelId, assignee ?? 'reviewer');
+  const tacticalRoom = await resolveTacticalRoomId(channelId, assignee ?? "reviewer");
 
   if (tacticalRoom) {
-    const isVerifierTarget = assignee === 'verifier';
-    const nextActor = isVerifierTarget ? '@verifier' : '@reviewer';
+    const isVerifierTarget = assignee === "verifier";
+    const nextActor = isVerifierTarget ? "@verifier" : "@reviewer";
     const actionRequired = isVerifierTarget
-      ? 'Executar verificação rigorosa de critérios de aceite e evidências.'
-      : 'Revisar código e diff de PR para conformidade técnica.';
+      ? "Executar verificação rigorosa de critérios de aceite e evidências."
+      : "Revisar código e diff de PR para conformidade técnica.";
 
     const content = `🔍 **[GATE DE REVISÃO / VALIDAÇÃO ATIVO]** \`${taskId}\` — ${cardTitle}
 👉 **Ação Requerida:** ${nextActor} — ${actionRequired}
@@ -601,25 +633,27 @@ Board: \`${boardSlug}\``;
     try {
       const message = await appendRoomMessage({
         roomId: tacticalRoom.roomId,
-        senderKind: 'system',
+        senderKind: "system",
         senderId: null,
-        senderName: 'Gate Controller',
+        senderName: "Gate Controller",
         content,
         notice: {
-          kind: 'card_review',
+          kind: "card_review",
           cardId: taskId,
           cardTitle,
           boardSlug,
-          npcName: assignee ?? 'reviewer',
+          npcName: assignee ?? "reviewer",
         },
       });
 
       if (emitRoomMessage) {
         emitRoomMessage(tacticalRoom.roomId, message);
       }
-      console.log(`[autonomous-hooks] Posted review gate alert in "${tacticalRoom.roomName}" (${tacticalRoom.roomId})`);
+      console.log(
+        `[autonomous-hooks] Posted review gate alert in "${tacticalRoom.roomName}" (${tacticalRoom.roomId})`,
+      );
     } catch (err) {
-      console.warn('[autonomous-hooks] Failed to post review gate message:', err);
+      console.warn("[autonomous-hooks] Failed to post review gate message:", err);
     }
   }
 }
@@ -636,16 +670,14 @@ export interface WipCheckResult {
  */
 export function checkBoardWipLimit(boardSlug: string, wipLimit = 5): WipCheckResult {
   try {
-    const dbPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+    const dbPath = path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
     if (!fs.existsSync(dbPath)) {
       return { allowed: true, activeCount: 0, wipLimit };
     }
 
     const sqlite = getSqliteDatabase(dbPath, { readonly: true });
     const row = sqlite
-      .prepare(
-        "SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review')"
-      )
+      .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review')")
       .get() as { count?: number } | undefined;
 
     const activeCount = Number(row?.count ?? 0);
@@ -670,7 +702,7 @@ export function checkBoardWipLimit(boardSlug: string, wipLimit = 5): WipCheckRes
  */
 export function checkBoardStarvation(boardSlug: string): { starved: boolean; activeCount: number } {
   try {
-    const dbPath = path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+    const dbPath = path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
     if (!fs.existsSync(dbPath)) return { starved: false, activeCount: 0 };
 
     const sqlite = getSqliteDatabase(dbPath, { readonly: true });
@@ -709,10 +741,12 @@ export async function checkAndTriggerStarvation(args: {
   }
   lastStarvationTrigger.set(boardSlug, now);
 
-  console.warn(`[autonomous-hooks] 🚨 BACKLOG STARVATION DETECTED on board "${boardSlug}" (active=${activeCount})`);
+  console.warn(
+    `[autonomous-hooks] 🚨 BACKLOG STARVATION DETECTED on board "${boardSlug}" (active=${activeCount})`,
+  );
 
   // 1. Alert in Product Office / Ops Control
-  const tacticalRoom = await resolveTacticalRoomId(channelId, 'product-manager');
+  const tacticalRoom = await resolveTacticalRoomId(channelId, "product-manager");
   if (tacticalRoom) {
     const alertContent = `🚨 **[FOME DE BACKLOG DETECTADA]**
 Board: \`${boardSlug}\`
@@ -722,39 +756,39 @@ Status: **0 tarefas ativas** (ready / running / todo esgotados).
     try {
       const message = await appendRoomMessage({
         roomId: tacticalRoom.roomId,
-        senderKind: 'system',
+        senderKind: "system",
         senderId: null,
-        senderName: 'Starvation Sentinel',
+        senderName: "Starvation Sentinel",
         content: alertContent,
         notice: {
-          kind: 'card_blocked',
+          kind: "card_blocked",
           cardId: `starvation-${boardSlug}`,
           cardTitle: `Backlog Starvation on ${boardSlug}`,
           boardSlug,
-          npcName: 'product-manager',
+          npcName: "product-manager",
         },
       });
       if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, message);
     } catch (err) {
-      console.warn('[autonomous-hooks] Failed to post starvation room notice:', err);
+      console.warn("[autonomous-hooks] Failed to post starvation room notice:", err);
     }
   }
 
   // 2. Wake up implementation-planner and product-manager via Hermes CLI
   try {
-    spawn('hermes', ['--profile', 'implementation-planner', 'cron', 'run', 'cefc5ff877ce'], {
+    spawn("hermes", ["--profile", "implementation-planner", "cron", "run", "cefc5ff877ce"], {
       detached: true,
-      stdio: 'ignore',
+      stdio: "ignore",
     }).unref();
 
-    spawn('hermes', ['--profile', 'product-manager', 'cron', 'run', '06c46a5c4668'], {
+    spawn("hermes", ["--profile", "product-manager", "cron", "run", "06c46a5c4668"], {
       detached: true,
-      stdio: 'ignore',
+      stdio: "ignore",
     }).unref();
 
     return true;
   } catch (err) {
-    console.warn('[autonomous-hooks] Failed to spawn hermes cron jobs on starvation:', err);
+    console.warn("[autonomous-hooks] Failed to spawn hermes cron jobs on starvation:", err);
     return false;
   }
 }
@@ -769,7 +803,7 @@ async function dispatchAutomatedRemediation(
   parentTitle: string,
   meta: Record<string, unknown>,
   channelId?: string,
-  runInfo?: TaskRunInfo | null
+  runInfo?: TaskRunInfo | null,
 ): Promise<void> {
   const cveCount = Number(meta.cve_critical_count ?? 0);
   const cveFindings = Array.isArray(meta.cve_findings) ? meta.cve_findings : [];
@@ -777,14 +811,16 @@ async function dispatchAutomatedRemediation(
 
   // A. If Critical CVEs exist -> create task in Engineering
   if (cveCount > 0 || cveFindings.length > 0) {
-    const engBoard = 'eng-ops';
-    const cveList = cveFindings.length ? cveFindings.join(', ') : `${cveCount} vulnerabilidades críticas`;
+    const engBoard = "eng-ops";
+    const cveList = cveFindings.length
+      ? cveFindings.join(", ")
+      : `${cveCount} vulnerabilidades críticas`;
     const title = `[P0-HOTFIX] Mitigar RCEs e CVEs críticos (${cveList})`;
     const body = `Tarefa de remediação P0 criada automaticamente a partir da auditoria ${parentTaskId} ("${parentTitle}").\n\nDetalhes:\n- CVEs identificados: ${cveList}\n- Ação: Atualizar dependências afetadas e validar ausência de regressões com test runner.`;
     insertTaskSafely(engBoard, {
       title,
       body,
-      assignee: 'backend-engineer',
+      assignee: "backend-engineer",
       priority: 9,
       parentId: parentTaskId,
     });
@@ -792,13 +828,13 @@ async function dispatchAutomatedRemediation(
 
   // B. If Expired SSL certs exist -> create task in Infrastructure
   if (sslExpiredCount > 0) {
-    const infraBoard = 'infra-ops';
+    const infraBoard = "infra-ops";
     const title = `[P0-INFRA] Renovar ${sslExpiredCount} certificados SSL/TLS expirados`;
     const body = `Tarefa de remediação P0 criada automaticamente a partir da auditoria ${parentTaskId} ("${parentTitle}").\n\nDetalhes:\n- Certificados expirados: ${sslExpiredCount}\n- Ação: Executar certbot renew, inspecionar bindings do Nginx/Traefik e validar TLS handshake.`;
     insertTaskSafely(infraBoard, {
       title,
       body,
-      assignee: 'site-reliability-engineer',
+      assignee: "site-reliability-engineer",
       priority: 9,
       parentId: parentTaskId,
     });
@@ -813,7 +849,7 @@ async function dispatchAutomatedRemediation(
     let targetBoard = boardSlug;
     if (channelId) {
       try {
-        const { listChannelBoards } = await import('@/lib/kanban-boards');
+        const { listChannelBoards } = await import("@/lib/kanban-boards");
         const boards = await listChannelBoards(channelId);
         const carrier = boards.find((b) => b.isEventCarrier) ?? boards[0];
         if (carrier?.boardSlug) {
@@ -825,10 +861,14 @@ async function dispatchAutomatedRemediation(
     }
 
     for (const slice of technicalSlices) {
-      const sliceTitle = typeof slice.title === 'string' ? slice.title : `[FATIA TÉCNICA] Sub-entrega de ${parentTaskId}`;
-      const sliceBody = typeof slice.body === 'string' ? slice.body : JSON.stringify(slice, null, 2);
-      const assignee = typeof slice.assignee === 'string' ? slice.assignee : 'backend-engineer';
-      const priority = typeof slice.priority === 'number' ? slice.priority : 5;
+      const sliceTitle =
+        typeof slice.title === "string"
+          ? slice.title
+          : `[FATIA TÉCNICA] Sub-entrega de ${parentTaskId}`;
+      const sliceBody =
+        typeof slice.body === "string" ? slice.body : JSON.stringify(slice, null, 2);
+      const assignee = typeof slice.assignee === "string" ? slice.assignee : "backend-engineer";
+      const priority = typeof slice.priority === "number" ? slice.priority : 5;
 
       insertTaskSafely(targetBoard, {
         title: sliceTitle,
@@ -842,18 +882,20 @@ async function dispatchAutomatedRemediation(
 
   // D. HK-01 Artifact Pyramid Ingestion: parses L2 analysis markdown files and commits cards to DeskRPG
   const candidatePyramids: string[] = [];
-  if (typeof meta.artifact_pyramid === 'string') {
+  if (typeof meta.artifact_pyramid === "string") {
     candidatePyramids.push(meta.artifact_pyramid);
   }
   if (Array.isArray(runInfo?.artifacts)) {
     for (const a of runInfo.artifacts) {
-      if (typeof a === 'string' && !candidatePyramids.includes(a)) {
+      if (typeof a === "string" && !candidatePyramids.includes(a)) {
         candidatePyramids.push(a);
       }
     }
   }
   if (runInfo?.summary) {
-    const match = runInfo.summary.match(/(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/);
+    const match = runInfo.summary.match(
+      /(\/[^\s\n]+\/(?:00-index\.md|[a-zA-Z0-9_-]+-decomposition[^\s\n]*))/,
+    );
     if (match && !candidatePyramids.includes(match[1])) {
       candidatePyramids.push(match[1]);
     }
@@ -883,13 +925,13 @@ async function dispatchAutomatedRemediation(
   // Kickstart workers on affected boards immediately
   if (affectedBoards.size > 0) {
     console.log(
-      `[autonomous-hooks] Committed ${totalCardsCommitted} cards across boards [${Array.from(affectedBoards).join(', ')}]. Spawning dispatchers...`
+      `[autonomous-hooks] Committed ${totalCardsCommitted} cards across boards [${Array.from(affectedBoards).join(", ")}]. Spawning dispatchers...`,
     );
     for (const destBoard of affectedBoards) {
       try {
-        spawn('hermes', ['kanban', '--board', destBoard, 'dispatch'], {
+        spawn("hermes", ["kanban", "--board", destBoard, "dispatch"], {
           detached: true,
-          stdio: 'ignore',
+          stdio: "ignore",
         }).unref();
       } catch (err) {
         console.warn(`[autonomous-hooks] Failed to spawn hermes dispatch for ${destBoard}:`, err);
@@ -899,13 +941,13 @@ async function dispatchAutomatedRemediation(
 }
 
 export function normalizeSemanticTitle(title: string): string {
-  return (title || '')
+  return (title || "")
     .toLowerCase()
-    .replace(/\[.*?\]/g, '') // strip tag brackets like [P0-OWNER-TRIAGE], [INCIDENT], etc.
-    .replace(/t_[a-f0-9]{8,12}/g, '') // strip task IDs
-    .replace(/#[0-9]+/g, '') // strip numbers
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ') // strip punctuation
-    .replace(/\s+/g, ' ')
+    .replace(/\[.*?\]/g, "") // strip tag brackets like [P0-OWNER-TRIAGE], [INCIDENT], etc.
+    .replace(/t_[a-f0-9]{8,12}/g, "") // strip task IDs
+    .replace(/#[0-9]+/g, "") // strip numbers
+    .replace(/[^\p{L}\p{N}\s]/gu, " ") // strip punctuation
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -946,35 +988,39 @@ export function insertTaskSafely(
     priority: number;
     parentId: string;
     wipLimit?: number;
-    initialStatus?: 'todo' | 'ready';
+    initialStatus?: "todo" | "ready";
     /** Optional stable marker used by event consumers to deduplicate active tasks. */
     dedupKey?: string;
     /** Comment and event payload to append when an active dedupKey match is found. */
     updateComment?: string;
     /** Test-only/embedded callers may provide an isolated SQLite database. */
     databasePath?: string;
-    workspaceKind?: 'scratch' | 'worktree' | 'dir';
+    workspaceKind?: "scratch" | "worktree" | "dir";
     workspacePath?: string;
     projectId?: string;
     bypassWipLimit?: boolean;
-  }
+  },
 ): { success: boolean; taskId?: string; reason?: string } {
   let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
   let transactionOpen = false;
   try {
-    const dbPath = spec.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
-    if (!fs.existsSync(dbPath)) return { success: false, reason: 'board_db_not_found' };
+    const dbPath =
+      spec.databasePath ??
+      path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
+    if (!fs.existsSync(dbPath)) return { success: false, reason: "board_db_not_found" };
 
     sqlite = getSqliteDatabase(dbPath);
     // Serialize the deduplication read with the eventual insert. Without this, two concurrent
     // Alertmanager retries can both observe no matching task and create duplicate incidents.
-    sqlite.exec('BEGIN IMMEDIATE');
+    sqlite.exec("BEGIN IMMEDIATE");
     transactionOpen = true;
 
     // Ensure dedupKey is permanently stamped in body so future queries find it deterministically
-    let finalBody = spec.body || '';
+    let finalBody = spec.body || "";
     if (spec.dedupKey && !finalBody.includes(spec.dedupKey)) {
-      finalBody = finalBody ? `${finalBody}\n\n<!-- dedupKey: ${spec.dedupKey} -->` : `<!-- dedupKey: ${spec.dedupKey} -->`;
+      finalBody = finalBody
+        ? `${finalBody}\n\n<!-- dedupKey: ${spec.dedupKey} -->`
+        : `<!-- dedupKey: ${spec.dedupKey} -->`;
     }
 
     ensureBoardAntiFloodTriggers(sqlite);
@@ -982,21 +1028,28 @@ export function insertTaskSafely(
     let existing: { id?: string } | undefined;
     if (spec.dedupKey) {
       existing = sqlite
-        .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ? LIMIT 1")
+        .prepare(
+          "SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND body LIKE ? LIMIT 1",
+        )
         .get(`%${spec.dedupKey}%`) as { id?: string } | undefined;
     }
 
     // 1. Exact title idempotency check (only when caller has not provided an explicit dedupKey)
     if (!existing && !spec.dedupKey) {
       existing = sqlite
-        .prepare("SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND title = ? LIMIT 1")
+        .prepare(
+          "SELECT id FROM tasks WHERE status NOT IN ('done', 'archived') AND title = ? LIMIT 1",
+        )
         .get(spec.title) as { id?: string } | undefined;
     }
 
     // 2. Normalized semantic title check for triage and automated cards (only when caller has not provided an explicit dedupKey)
     if (!existing && !spec.dedupKey) {
       const normalizedNew = normalizeSemanticTitle(spec.title);
-      if (normalizedNew.length >= 8 && /triagem|triage|env-fix|reparar|alerta|incident/i.test(spec.title)) {
+      if (
+        normalizedNew.length >= 8 &&
+        /triagem|triage|env-fix|reparar|alerta|incident/i.test(spec.title)
+      ) {
         const activeRows = sqlite
           .prepare("SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived')")
           .all() as Array<{ id: string; title: string }>;
@@ -1014,29 +1067,43 @@ export function insertTaskSafely(
         const now = Math.floor(Date.now() / 1000);
         try {
           sqlite
-            .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
-            .run(existing.id, 'alertmanager-webhook', spec.updateComment, now);
+            .prepare(
+              "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+            )
+            .run(existing.id, "alertmanager-webhook", spec.updateComment, now);
         } catch (commentErr) {
-          console.warn(`[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`, commentErr);
+          console.warn(
+            `[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`,
+            commentErr,
+          );
         }
         try {
           sqlite
             .prepare(
-              "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)"
+              "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)",
             )
             .run(
               existing.id,
-              JSON.stringify({ source: 'alertmanager-webhook', action: 'deduplicated', dedupKey: spec.dedupKey }),
-              now
+              JSON.stringify({
+                source: "alertmanager-webhook",
+                action: "deduplicated",
+                dedupKey: spec.dedupKey,
+              }),
+              now,
             );
         } catch (eventErr) {
-          console.warn(`[autonomous-hooks] Failed to append dedup event for ${existing.id}:`, eventErr);
+          console.warn(
+            `[autonomous-hooks] Failed to append dedup event for ${existing.id}:`,
+            eventErr,
+          );
         }
       }
-      sqlite.exec('COMMIT');
+      sqlite.exec("COMMIT");
       transactionOpen = false;
-      console.log(`[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`);
-      return { success: true, taskId: existing.id, reason: 'updated_existing' };
+      console.log(
+        `[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`,
+      );
+      return { success: true, taskId: existing.id, reason: "updated_existing" };
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -1050,7 +1117,7 @@ export function insertTaskSafely(
     const activeCount = Number(activeRow?.count ?? 0);
     if (!isEmergencyP0 && activeCount >= wipLimit) {
       const reason = `WIP limit exceeded on board "${boardSlug}": ${activeCount} active tasks (limit is ${wipLimit})`;
-      sqlite.exec('ROLLBACK');
+      sqlite.exec("ROLLBACK");
       transactionOpen = false;
       console.warn(`[autonomous-hooks] Task creation blocked by WIP: ${reason}`);
       return { success: false, reason };
@@ -1058,13 +1125,15 @@ export function insertTaskSafely(
 
     // --- ANTI-FLOOD LAYER 2: Hard Board Active Task Ceiling (Iron Cap) ---
     const totalActiveRow = sqlite
-      .prepare("SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review', 'blocked', 'todo')")
+      .prepare(
+        "SELECT count(*) as count FROM tasks WHERE status IN ('ready', 'running', 'review', 'blocked', 'todo')",
+      )
       .get() as { count?: number } | undefined;
     const totalActiveCount = Number(totalActiveRow?.count ?? 0);
     const HARD_CEILING = isEmergencyP0 ? 20 : 15;
     if (totalActiveCount >= HARD_CEILING) {
       const reason = `[ANTI-FLOOD-GATE] Hard active task ceiling reached on board "${boardSlug}": ${totalActiveCount} active tasks (max ceiling is ${HARD_CEILING}).`;
-      sqlite.exec('ROLLBACK');
+      sqlite.exec("ROLLBACK");
       transactionOpen = false;
       console.warn(`[autonomous-hooks] Task creation blocked by hard ceiling: ${reason}`);
       return { success: false, reason };
@@ -1078,14 +1147,49 @@ export function insertTaskSafely(
     const recentCount = Number(recentRow?.count ?? 0);
     if (!isEmergencyP0 && recentCount >= 5) {
       const reason = `[ANTI-FLOOD-GATE] Rate limit exceeded on board "${boardSlug}": ${recentCount} tasks created in the last 5 minutes. Cooling down.`;
-      sqlite.exec('ROLLBACK');
+      sqlite.exec("ROLLBACK");
       transactionOpen = false;
       console.warn(`[autonomous-hooks] Task creation blocked by rate limiter: ${reason}`);
       return { success: false, reason };
     }
 
-    const taskId = 't_' + randomUUID().replace(/-/g, '').slice(0, 8);
-    const status = spec.initialStatus ?? 'ready';
+    // --- ANTI-FLOOD LAYER 4: Sovereign Executive Guard (Anti-Vacuum Check) ---
+    const isSreOrAlert =
+      (spec.dedupKey && spec.dedupKey.startsWith("alert-")) ||
+      finalBody.includes("alertmanager-fingerprint") ||
+      spec.title.includes("[P0-");
+    const hasSovereignMarker =
+      finalBody.includes("sovereign-directive") ||
+      (spec.dedupKey && spec.dedupKey.includes("sovereign")) ||
+      spec.databasePath !== undefined;
+    if (!isEmergencyP0 && !isSreOrAlert && !hasSovereignMarker) {
+      const directivePath = path.join(os.homedir(), ".hermes", "sovereign_directive.md");
+      let hasActiveDirective = false;
+      try {
+        if (!fs.existsSync(directivePath)) {
+          fs.mkdirSync(path.dirname(directivePath), { recursive: true });
+          fs.writeFileSync(
+            directivePath,
+            "# Sovereign Directive\n\n**Status**: active\n**Goal**: Autonomous operation active.\n",
+            "utf8",
+          );
+          hasActiveDirective = true;
+        } else {
+          const content = fs.readFileSync(directivePath, "utf8");
+          hasActiveDirective = /status\*\*:\s*active/i.test(content);
+        }
+      } catch {}
+      if (!hasActiveDirective) {
+        const reason = `[SOVEREIGN-EXECUTIVE-GUARD] Task creation in vacuum blocked on "${boardSlug}": No active Sovereign Directive in ~/.hermes/sovereign_directive.md.`;
+        sqlite.exec("ROLLBACK");
+        transactionOpen = false;
+        console.warn(`[autonomous-hooks] Task creation blocked by Sovereign Guard: ${reason}`);
+        return { success: false, reason };
+      }
+    }
+
+    const taskId = "t_" + randomUUID().replace(/-/g, "").slice(0, 8);
+    const status = spec.initialStatus ?? "ready";
 
     const resolvedWs = resolveWorkspaceForTask(boardSlug, {
       title: spec.title,
@@ -1096,17 +1200,19 @@ export function insertTaskSafely(
       projectId: spec.projectId,
     });
 
-    const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((c) => c.name);
-    const hasWsPath = columns.includes('workspace_path');
-    const hasProjId = columns.includes('project_id');
-    const hasModelOverride = columns.includes('model_override');
-    const hasProviderOverride = columns.includes('provider_override');
+    const columns = (
+      sqlite.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
+    ).map((c) => c.name);
+    const hasWsPath = columns.includes("workspace_path");
+    const hasProjId = columns.includes("project_id");
+    const hasModelOverride = columns.includes("model_override");
+    const hasProviderOverride = columns.includes("provider_override");
 
     if (hasWsPath && hasProjId && hasModelOverride && hasProviderOverride) {
       sqlite
         .prepare(
           `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, project_id, model_override, provider_override)
-           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?, NULL, NULL)`
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?, NULL, NULL)`,
         )
         .run(
           taskId,
@@ -1118,13 +1224,13 @@ export function insertTaskSafely(
           now,
           resolvedWs.workspaceKind,
           resolvedWs.workspacePath,
-          resolvedWs.projectId
+          resolvedWs.projectId,
         );
     } else if (hasWsPath && hasProjId) {
       sqlite
         .prepare(
           `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, project_id)
-           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?, ?, ?)`,
         )
         .run(
           taskId,
@@ -1136,37 +1242,46 @@ export function insertTaskSafely(
           now,
           resolvedWs.workspaceKind,
           resolvedWs.workspacePath,
-          resolvedWs.projectId
+          resolvedWs.projectId,
         );
     } else {
       sqlite
         .prepare(
           `INSERT INTO tasks (id, title, body, assignee, status, priority, created_by, created_at, workspace_kind)
-           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, 'autonomous-hook', ?, ?)`,
         )
-        .run(taskId, spec.title, finalBody, spec.assignee, status, spec.priority, now, resolvedWs.workspaceKind);
+        .run(
+          taskId,
+          spec.title,
+          finalBody,
+          spec.assignee,
+          status,
+          spec.priority,
+          now,
+          resolvedWs.workspaceKind,
+        );
     }
 
     // Link parent
     try {
       sqlite
-        .prepare('INSERT INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+        .prepare("INSERT INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)")
         .run(spec.parentId, taskId, now);
     } catch {
       // ignore link collision
     }
 
-    sqlite.exec('COMMIT');
+    sqlite.exec("COMMIT");
     transactionOpen = false;
 
     console.log(
-      `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee}, workspace: ${resolvedWs.workspaceKind} @ ${resolvedWs.workspacePath})`
+      `[autonomous-hooks] Created task ${taskId} on board ${boardSlug}: "${spec.title}" (status: ${status}, assignee: ${spec.assignee}, workspace: ${resolvedWs.workspaceKind} @ ${resolvedWs.workspacePath})`,
     );
     return { success: true, taskId };
   } catch (err: unknown) {
     if (transactionOpen && sqlite) {
       try {
-        sqlite.exec('ROLLBACK');
+        sqlite.exec("ROLLBACK");
       } catch {
         // Preserve the original insertion error.
       }
@@ -1188,8 +1303,8 @@ export interface ActiveSessionEntry {
  * Scans active_sessions.json in all profiles and prunes stale leases whose PIDs are no longer alive.
  */
 export function cleanOrphanSessionLeases(hermesHome?: string): number {
-  const home = hermesHome ?? path.join(os.homedir(), '.hermes');
-  const profilesDir = path.join(home, 'profiles');
+  const home = hermesHome ?? path.join(os.homedir(), ".hermes");
+  const profilesDir = path.join(home, "profiles");
   let cleanedCount = 0;
   const dirsToCheck: string[] = [];
   if (fs.existsSync(profilesDir)) {
@@ -1205,10 +1320,10 @@ export function cleanOrphanSessionLeases(hermesHome?: string): number {
   dirsToCheck.push(home);
 
   for (const dir of dirsToCheck) {
-    const activePath = path.join(dir, 'runtime', 'active_sessions.json');
+    const activePath = path.join(dir, "runtime", "active_sessions.json");
     if (!fs.existsSync(activePath)) continue;
     try {
-      const raw = fs.readFileSync(activePath, 'utf8');
+      const raw = fs.readFileSync(activePath, "utf8");
       const data = JSON.parse(raw) as { entries?: ActiveSessionEntry[] };
       if (!Array.isArray(data.entries) || data.entries.length === 0) continue;
       const alive: ActiveSessionEntry[] = [];
@@ -1231,7 +1346,7 @@ export function cleanOrphanSessionLeases(hermesHome?: string): number {
       }
       if (profileCleaned > 0) {
         data.entries = alive;
-        fs.writeFileSync(activePath, JSON.stringify(data, null, 2), 'utf8');
+        fs.writeFileSync(activePath, JSON.stringify(data, null, 2), "utf8");
         cleanedCount += profileCleaned;
       }
     } catch {}
@@ -1241,14 +1356,14 @@ export function cleanOrphanSessionLeases(hermesHome?: string): number {
 
 export interface BlockerTriageResult {
   action:
-    | 'workspace_remediated'
-    | 'env_fix_dispatched'
-    | 'needs_input_dispatched'
-    | 'session_cleaned'
-    | 'quota_model_remediated'
-    | 'owner_triage_dispatched'
-    | 'owner_triage_aggregated'
-    | 'none';
+    | "workspace_remediated"
+    | "env_fix_dispatched"
+    | "needs_input_dispatched"
+    | "session_cleaned"
+    | "quota_model_remediated"
+    | "owner_triage_dispatched"
+    | "owner_triage_aggregated"
+    | "none";
   remediatedTaskId?: string;
   spawnedTaskId?: string;
   details?: string;
@@ -1263,7 +1378,7 @@ export interface BlockerTaskRow {
   priority: number;
   block_kind: string | null;
   last_failure_error: string | null;
-  workspace_kind: 'scratch' | 'worktree' | 'dir';
+  workspace_kind: "scratch" | "worktree" | "dir";
   workspace_path: string | null;
   project_id: string | null;
 }
@@ -1288,48 +1403,49 @@ export async function executeBlockerTriageLifecycle(args: {
   bypassDispatchSpawn?: boolean;
 }): Promise<BlockerTriageResult> {
   const { channelId, boardSlug, taskId, cardTitle, assignee, emitRoomMessage } = args;
-  const dbPath = args.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+  const dbPath =
+    args.databasePath ??
+    path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
   if (!fs.existsSync(dbPath)) {
-    return { action: 'none', details: 'board_db_not_found' };
+    return { action: "none", details: "board_db_not_found" };
   }
 
   let sqlite: ReturnType<typeof getSqliteDatabase> | null = null;
   try {
     sqlite = getSqliteDatabase(dbPath);
   } catch (err: unknown) {
-    return { action: 'none', details: `db_open_failed: ${err instanceof Error ? err.message : String(err)}` };
+    return {
+      action: "none",
+      details: `db_open_failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   const taskRow = sqlite
     .prepare(
-      'SELECT id, title, body, assignee, status, priority, block_kind, last_failure_error, workspace_kind, workspace_path, project_id FROM tasks WHERE id = ?'
+      "SELECT id, title, body, assignee, status, priority, block_kind, last_failure_error, workspace_kind, workspace_path, project_id FROM tasks WHERE id = ?",
     )
     .get(taskId) as BlockerTaskRow | undefined;
 
   if (!taskRow) {
-    return { action: 'none', details: 'task_not_found' };
+    return { action: "none", details: "task_not_found" };
   }
 
   // --- RECURSION GUARD: Prevent Infinite Recursive Triage Chains ---
   const isAlreadyTriageTask =
     /\[(?:P0-OWNER-TRIAGE|P0-DECISÃO|P0-ENV-FIX|EPIC-TRIAGE)\]|triagem executiva/i.test(
-      taskRow.title
+      taskRow.title,
     );
   if (isAlreadyTriageTask) {
     console.warn(
-      `[autonomous-hooks] Refusing recursive triage for already-triaged task ${taskId} ("${taskRow.title}")`
+      `[autonomous-hooks] Refusing recursive triage for already-triaged task ${taskId} ("${taskRow.title}")`,
     );
-    sqlite
-      .prepare(
-        "UPDATE tasks SET block_kind = 'quarantine' WHERE id = ?"
-      )
-      .run(taskId);
-    return { action: 'none', details: 'recursive_triage_prevented' };
+    sqlite.prepare("UPDATE tasks SET block_kind = 'quarantine' WHERE id = ?").run(taskId);
+    return { action: "none", details: "recursive_triage_prevented" };
   }
 
   const eventRow = sqlite
     .prepare(
-      "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'blocked' ORDER BY created_at DESC LIMIT 1"
+      "SELECT payload FROM task_events WHERE task_id = ? AND kind = 'blocked' ORDER BY created_at DESC LIMIT 1",
     )
     .get(taskId) as { payload?: string } | undefined;
 
@@ -1340,21 +1456,21 @@ export async function executeBlockerTriageLifecycle(args: {
     } catch {}
   }
 
-  const blockKind = String(eventPayload.kind || taskRow.block_kind || '').toLowerCase();
+  const blockKind = String(eventPayload.kind || taskRow.block_kind || "").toLowerCase();
   const blockReason = [
-    eventPayload.reason ?? '',
-    taskRow.last_failure_error ?? '',
-    taskRow.body ?? '',
-  ].join(' ');
+    eventPayload.reason ?? "",
+    taskRow.last_failure_error ?? "",
+    taskRow.body ?? "",
+  ].join(" ");
 
   const tacticalRoom = await resolveTacticalRoomId(channelId, assignee);
   const now = Math.floor(Date.now() / 1000);
 
   // --- Branch A: Scratch workspace empty or missing git repo ---
   const isScratchIssue =
-    taskRow.workspace_kind === 'scratch' ||
+    taskRow.workspace_kind === "scratch" ||
     /workspace.*scratch.*(?:vazio|empty)|scratch.*vazio|sem checkout|nenhum checkout|não contém checkout|empty workspace|not inside a git repo|workspace scratch está vazio|workspace está vazio/i.test(
-      blockReason
+      blockReason,
     );
 
   if (isScratchIssue) {
@@ -1364,7 +1480,7 @@ export async function executeBlockerTriageLifecycle(args: {
       assignee: taskRow.assignee ?? undefined,
     });
 
-    if (resolved.workspacePath && resolved.workspaceKind !== 'scratch') {
+    if (resolved.workspacePath && resolved.workspaceKind !== "scratch") {
       sqlite
         .prepare(
           `UPDATE tasks
@@ -1374,34 +1490,34 @@ export async function executeBlockerTriageLifecycle(args: {
                status = 'ready',
                block_kind = NULL,
                last_failure_error = NULL
-           WHERE id = ?`
+           WHERE id = ?`,
         )
         .run(resolved.workspaceKind, resolved.workspacePath, resolved.projectId, taskId);
 
       try {
         sqlite
           .prepare(
-            'INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)'
+            "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
           )
           .run(
             taskId,
-            'blocker-triage-hook',
+            "blocker-triage-hook",
             `[BlockerTriageHook] Workspace efêmero 'scratch' convertido automaticamente para '${resolved.workspaceKind}' no repositório ${resolved.workspacePath} (projeto: ${resolved.projectId}). Card promovido para 'ready'.`,
-            now
+            now,
           );
         sqlite
           .prepare(
-            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)",
           )
           .run(
             taskId,
             JSON.stringify({
-              reason: 'auto_healed_scratch_workspace_to_worktree',
+              reason: "auto_healed_scratch_workspace_to_worktree",
               project_id: resolved.projectId,
               workspace_path: resolved.workspacePath,
               workspace_kind: resolved.workspaceKind,
             }),
-            now
+            now,
           );
       } catch (e) {
         console.warn(`[autonomous-hooks] Failed to record unblock event:`, e);
@@ -1415,16 +1531,16 @@ export async function executeBlockerTriageLifecycle(args: {
         try {
           const msg = await appendRoomMessage({
             roomId: tacticalRoom.roomId,
-            senderKind: 'system',
+            senderKind: "system",
             senderId: null,
-            senderName: 'Blocker Triage Sentinel',
+            senderName: "Blocker Triage Sentinel",
             content,
             notice: {
-              kind: 'card_done',
+              kind: "card_done",
               cardId: taskId,
               cardTitle,
               boardSlug,
-              npcName: assignee ?? 'system',
+              npcName: assignee ?? "system",
             },
           });
           if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
@@ -1433,15 +1549,15 @@ export async function executeBlockerTriageLifecycle(args: {
 
       if (!args.bypassDispatchSpawn) {
         try {
-          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+          spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
             detached: true,
-            stdio: 'ignore',
+            stdio: "ignore",
           }).unref();
         } catch {}
       }
 
       return {
-        action: 'workspace_remediated',
+        action: "workspace_remediated",
         remediatedTaskId: taskId,
         details: `Converted to ${resolved.workspaceKind} at ${resolved.workspacePath}`,
       };
@@ -1451,7 +1567,7 @@ export async function executeBlockerTriageLifecycle(args: {
   // --- Branch B: Broken environment / missing dependencies (.venv, missing libs, daphne, etc.) ---
   const isEnvIssue =
     /import(?:error)?:\s*no module named|modulenotfounderror|\b(?:daphne|django_extensions)\b|poetry.*not found|broken environment|missing dependency|depend[êe]ncia.*ausente/i.test(
-      blockReason
+      blockReason,
     );
 
   if (isEnvIssue) {
@@ -1465,7 +1581,7 @@ export async function executeBlockerTriageLifecycle(args: {
         `1. Reparar .venv/poetry/pip e dependências ausentes no repositório.\n` +
         `2. Rodar a suíte de testes unitários para validar a integridade.\n` +
         `3. Finalizar este card para desbloquear automaticamente a tarefa dependente ${taskId}.`,
-      assignee: 'platform-engineer',
+      assignee: "platform-engineer",
       priority: 10,
       parentId: taskId,
       dedupKey,
@@ -1475,9 +1591,13 @@ export async function executeBlockerTriageLifecycle(args: {
     if (insertRes.success && insertRes.taskId) {
       try {
         sqlite
-          .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+          .prepare(
+            "INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)",
+          )
           .run(insertRes.taskId, taskId, now);
-        sqlite.prepare("UPDATE tasks SET status = 'todo', block_kind = 'dependency' WHERE id = ?").run(taskId);
+        sqlite
+          .prepare("UPDATE tasks SET status = 'todo', block_kind = 'dependency' WHERE id = ?")
+          .run(taskId);
       } catch (e) {
         console.warn(`[autonomous-hooks] Failed to link dependency task:`, e);
       }
@@ -1490,16 +1610,16 @@ export async function executeBlockerTriageLifecycle(args: {
         try {
           const msg = await appendRoomMessage({
             roomId: tacticalRoom.roomId,
-            senderKind: 'system',
+            senderKind: "system",
             senderId: null,
-            senderName: 'Blocker Triage Sentinel',
+            senderName: "Blocker Triage Sentinel",
             content,
             notice: {
-              kind: 'card_blocked',
+              kind: "card_blocked",
               cardId: taskId,
               cardTitle,
               boardSlug,
-              npcName: assignee ?? 'system',
+              npcName: assignee ?? "system",
             },
           });
           if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
@@ -1508,15 +1628,15 @@ export async function executeBlockerTriageLifecycle(args: {
 
       if (!args.bypassDispatchSpawn) {
         try {
-          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+          spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
             detached: true,
-            stdio: 'ignore',
+            stdio: "ignore",
           }).unref();
         } catch {}
       }
 
       return {
-        action: 'env_fix_dispatched',
+        action: "env_fix_dispatched",
         remediatedTaskId: taskId,
         spawnedTaskId: insertRes.taskId,
         details: `Dispatched env fix card ${insertRes.taskId}`,
@@ -1526,10 +1646,10 @@ export async function executeBlockerTriageLifecycle(args: {
 
   // --- Branch C: needs_input / Acceptance Criteria Ambiguity ---
   const isNeedsInput =
-    blockKind === 'needs_input' ||
-    (blockKind !== 'capability' &&
+    blockKind === "needs_input" ||
+    (blockKind !== "capability" &&
       /needs_input|aguardando.*decis|conversão orgânica|compra teste autorizada|ambiguidade de aceite/i.test(
-        blockReason
+        blockReason,
       ));
 
   if (isNeedsInput) {
@@ -1543,7 +1663,7 @@ export async function executeBlockerTriageLifecycle(args: {
         `1. Avaliar se o critério de aceite exige intervenção física externa ou validação de compra teste.\n` +
         `2. Ajustar os critérios de aceite do card ${taskId} para permitir simulação aprovada ou sign-off alternativo.\n` +
         `3. Emitir kanban_unblock para liberar a esteira autônoma.`,
-      assignee: 'product-manager',
+      assignee: "product-manager",
       priority: 10,
       parentId: taskId,
       dedupKey,
@@ -1559,16 +1679,16 @@ export async function executeBlockerTriageLifecycle(args: {
         try {
           const msg = await appendRoomMessage({
             roomId: tacticalRoom.roomId,
-            senderKind: 'system',
+            senderKind: "system",
             senderId: null,
-            senderName: 'Blocker Triage Sentinel',
+            senderName: "Blocker Triage Sentinel",
             content,
             notice: {
-              kind: 'card_blocked',
+              kind: "card_blocked",
               cardId: taskId,
               cardTitle,
               boardSlug,
-              npcName: assignee ?? 'system',
+              npcName: assignee ?? "system",
             },
           });
           if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
@@ -1577,15 +1697,15 @@ export async function executeBlockerTriageLifecycle(args: {
 
       if (!args.bypassDispatchSpawn) {
         try {
-          spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+          spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
             detached: true,
-            stdio: 'ignore',
+            stdio: "ignore",
           }).unref();
         } catch {}
       }
 
       return {
-        action: 'needs_input_dispatched',
+        action: "needs_input_dispatched",
         remediatedTaskId: taskId,
         spawnedTaskId: insertRes.taskId,
         details: `Dispatched decision card ${insertRes.taskId}`,
@@ -1596,11 +1716,11 @@ export async function executeBlockerTriageLifecycle(args: {
   // --- Branch D: Quota, HTTP 429, session ceiling 6/6 or invalid model override ---
   const isQuotaOrModelOrSession =
     /active session limit|model.*not supported|gpt-5\.3-codex-spark|quota|rate.*limit|http\s*429|too many requests|insufficient_quota|resource_exhausted/i.test(
-      blockReason
+      blockReason,
     ) ||
-    blockKind === 'quota' ||
-    blockKind === 'model' ||
-    blockKind === 'transient';
+    blockKind === "quota" ||
+    blockKind === "model" ||
+    blockKind === "transient";
 
   if (isQuotaOrModelOrSession) {
     const cleaned = cleanOrphanSessionLeases();
@@ -1612,30 +1732,32 @@ export async function executeBlockerTriageLifecycle(args: {
              status = 'ready',
              block_kind = NULL,
              last_failure_error = NULL
-         WHERE id = ?`
+         WHERE id = ?`,
       )
       .run(taskId);
 
     try {
       sqlite
-        .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+        )
         .run(
           taskId,
-          'blocker-triage-hook',
+          "blocker-triage-hook",
           `[BlockerTriageHook] Quota / modelo / saturação de sessão auto-remediado: overrides limpos, status resetado para 'ready'.`,
-          now
+          now,
         );
       sqlite
         .prepare(
-          "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+          "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)",
         )
         .run(
           taskId,
           JSON.stringify({
-            reason: 'quota_model_session_auto_remediated',
+            reason: "quota_model_session_auto_remediated",
             cleaned_leases: cleaned,
           }),
-          now
+          now,
         );
     } catch (e) {
       console.warn(`[autonomous-hooks] Failed to record unblock event:`, e);
@@ -1649,16 +1771,16 @@ export async function executeBlockerTriageLifecycle(args: {
       try {
         const msg = await appendRoomMessage({
           roomId: tacticalRoom.roomId,
-          senderKind: 'system',
+          senderKind: "system",
           senderId: null,
-          senderName: 'Blocker Triage Sentinel',
+          senderName: "Blocker Triage Sentinel",
           content,
           notice: {
-            kind: 'card_done',
+            kind: "card_done",
             cardId: taskId,
             cardTitle,
             boardSlug,
-            npcName: assignee ?? 'system',
+            npcName: assignee ?? "system",
           },
         });
         if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
@@ -1667,15 +1789,15 @@ export async function executeBlockerTriageLifecycle(args: {
 
     if (!args.bypassDispatchSpawn) {
       try {
-        spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+        spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
           detached: true,
-          stdio: 'ignore',
+          stdio: "ignore",
         }).unref();
       } catch {}
     }
 
     return {
-      action: 'quota_model_remediated',
+      action: "quota_model_remediated",
       remediatedTaskId: taskId,
       details: `Cleaned ${cleaned} orphan sessions, cleared model/provider overrides, moved to ready`,
     };
@@ -1685,27 +1807,31 @@ export async function executeBlockerTriageLifecycle(args: {
   // Board-level triage cap: If an open triage card already exists on this board, aggregate into it
   const existingBoardTriage = sqlite
     .prepare(
-      "SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%[P0-OWNER-TRIAGE]%' OR title LIKE '%[EPIC-TRIAGE]%') LIMIT 1"
+      "SELECT id, title FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%[P0-OWNER-TRIAGE]%' OR title LIKE '%[EPIC-TRIAGE]%') LIMIT 1",
     )
     .get() as { id: string; title: string } | undefined;
 
   if (existingBoardTriage && existingBoardTriage.id !== taskId) {
     try {
       sqlite
-        .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+        .prepare(
+          "INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)",
+        )
         .run(existingBoardTriage.id, taskId, now);
       sqlite
-        .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+        )
         .run(
           existingBoardTriage.id,
-          'blocker-triage-sentinel',
+          "blocker-triage-sentinel",
           `⚠️ [NOVO BLOQUEIO AGREGADO] O card ${taskId} ("${cardTitle}") também bloqueou em L3 e foi vinculado a esta triagem existente.`,
-          now
+          now,
         );
     } catch {}
 
     return {
-      action: 'owner_triage_aggregated',
+      action: "owner_triage_aggregated",
       remediatedTaskId: taskId,
       spawnedTaskId: existingBoardTriage.id,
       details: `Aggregated into existing board triage card ${existingBoardTriage.id}`,
@@ -1723,7 +1849,7 @@ export async function executeBlockerTriageLifecycle(args: {
       `2. Caso viável via contorno técnico, delegar para o especialista competente com novo plano.\n` +
       `3. Se exigir decisão do Soberano, consolidar a síntese executiva na sala War Room / Ops Control.\n` +
       `4. Executar kanban_unblock no card original ${taskId} após resolução.`,
-    assignee: 'product-manager',
+    assignee: "product-manager",
     priority: 10,
     parentId: taskId,
     dedupKey,
@@ -1733,7 +1859,9 @@ export async function executeBlockerTriageLifecycle(args: {
   if (insertRes.success && insertRes.taskId) {
     try {
       sqlite
-        .prepare('INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)')
+        .prepare(
+          "INSERT OR IGNORE INTO task_links (parent_id, child_id, created_at) VALUES (?, ?, ?)",
+        )
         .run(insertRes.taskId, taskId, now);
     } catch (e) {
       console.warn(`[autonomous-hooks] Failed to link owner triage task:`, e);
@@ -1747,16 +1875,16 @@ export async function executeBlockerTriageLifecycle(args: {
       try {
         const msg = await appendRoomMessage({
           roomId: tacticalRoom.roomId,
-          senderKind: 'system',
+          senderKind: "system",
           senderId: null,
-          senderName: 'Blocker Triage Sentinel',
+          senderName: "Blocker Triage Sentinel",
           content,
           notice: {
-            kind: 'card_blocked',
+            kind: "card_blocked",
             cardId: taskId,
             cardTitle,
             boardSlug,
-            npcName: assignee ?? 'system',
+            npcName: assignee ?? "system",
           },
         });
         if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
@@ -1765,22 +1893,22 @@ export async function executeBlockerTriageLifecycle(args: {
 
     if (!args.bypassDispatchSpawn) {
       try {
-        spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+        spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
           detached: true,
-          stdio: 'ignore',
+          stdio: "ignore",
         }).unref();
       } catch {}
     }
 
     return {
-      action: 'owner_triage_dispatched',
+      action: "owner_triage_dispatched",
       remediatedTaskId: taskId,
       spawnedTaskId: insertRes.taskId,
       details: `Dispatched L3 owner triage card ${insertRes.taskId} for blocked task ${taskId}`,
     };
   }
 
-  return { action: 'none', details: 'no_matching_triage_rule' };
+  return { action: "none", details: "no_matching_triage_rule" };
 }
 
 /**
@@ -1805,7 +1933,9 @@ export function executeQuotaModelSentinelLifecycle(args: {
   bypassDispatchSpawn?: boolean;
 }): QuotaModelSentinelResult {
   const { boardSlug } = args;
-  const dbPath = args.databasePath ?? path.join(os.homedir(), '.hermes', 'kanban', 'boards', boardSlug, 'kanban.db');
+  const dbPath =
+    args.databasePath ??
+    path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
   if (!fs.existsSync(dbPath)) {
     return {
       inspectedBoard: boardSlug,
@@ -1820,15 +1950,17 @@ export function executeQuotaModelSentinelLifecycle(args: {
   const now = Math.floor(Date.now() / 1000);
 
   // 1. Clear model and provider overrides
-  const columns = (sqlite.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((c) => c.name);
+  const columns = (sqlite.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>).map(
+    (c) => c.name,
+  );
   let clearedOverridesCount = 0;
-  if (columns.includes('model_override') && columns.includes('provider_override')) {
+  if (columns.includes("model_override") && columns.includes("provider_override")) {
     const info = sqlite
       .prepare(
         `UPDATE tasks
          SET model_override = NULL,
              provider_override = NULL
-         WHERE model_override IS NOT NULL OR provider_override IS NOT NULL`
+         WHERE model_override IS NOT NULL OR provider_override IS NOT NULL`,
       )
       .run();
     clearedOverridesCount = Number(info.changes || 0);
@@ -1837,17 +1969,22 @@ export function executeQuotaModelSentinelLifecycle(args: {
   // 2. Identify blocked tasks by quota, 429, session limit, or invalid model
   const blockedRows = sqlite
     .prepare(`SELECT id, title, block_kind, last_failure_error FROM tasks WHERE status = 'blocked'`)
-    .all() as Array<{ id: string; title: string; block_kind: string | null; last_failure_error: string | null }>;
+    .all() as Array<{
+    id: string;
+    title: string;
+    block_kind: string | null;
+    last_failure_error: string | null;
+  }>;
 
   const remediatedTaskIds: string[] = [];
   for (const row of blockedRows) {
-    const reason = `${row.block_kind ?? ''} ${row.last_failure_error ?? ''}`.toLowerCase();
+    const reason = `${row.block_kind ?? ""} ${row.last_failure_error ?? ""}`.toLowerCase();
     const isQuotaOrModel =
-      row.block_kind === 'quota' ||
-      row.block_kind === 'model' ||
-      row.block_kind === 'transient' ||
+      row.block_kind === "quota" ||
+      row.block_kind === "model" ||
+      row.block_kind === "transient" ||
       /quota|rate.*limit|http\s*429|too many requests|active session limit|resource_exhausted|insufficient_quota|model.*not supported|gpt-5\.3-codex-spark/i.test(
-        reason
+        reason,
       );
 
     if (isQuotaOrModel) {
@@ -1857,24 +1994,26 @@ export function executeQuotaModelSentinelLifecycle(args: {
            SET status = 'ready',
                block_kind = NULL,
                last_failure_error = NULL
-           WHERE id = ?`
+           WHERE id = ?`,
         )
         .run(row.id);
 
       try {
         sqlite
-          .prepare('INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)')
+          .prepare(
+            "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+          )
           .run(
             row.id,
-            'quota-model-sentinel',
+            "quota-model-sentinel",
             `[HK-09 QuotaModelSentinel] Auto-unblock executado e overrides limpos. Card retornado para 'ready'.`,
-            now
+            now,
           );
         sqlite
           .prepare(
-            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)"
+            "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'unblocked', ?, ?)",
           )
-          .run(row.id, JSON.stringify({ reason: 'sentinel_auto_unblock_quota_model' }), now);
+          .run(row.id, JSON.stringify({ reason: "sentinel_auto_unblock_quota_model" }), now);
       } catch {}
 
       remediatedTaskIds.push(row.id);
@@ -1883,9 +2022,9 @@ export function executeQuotaModelSentinelLifecycle(args: {
 
   if (remediatedTaskIds.length > 0 && !args.bypassDispatchSpawn) {
     try {
-      spawn('hermes', ['kanban', '--board', boardSlug, 'dispatch'], {
+      spawn("hermes", ["kanban", "--board", boardSlug, "dispatch"], {
         detached: true,
-        stdio: 'ignore',
+        stdio: "ignore",
       }).unref();
     } catch {}
   }
@@ -1896,4 +2035,136 @@ export function executeQuotaModelSentinelLifecycle(args: {
     unblockedTasksCount: remediatedTaskIds.length,
     remediatedTaskIds,
   };
+}
+
+/**
+ * HK-03: Artifact Preservation Fallback (In-Process TypeScript fallback)
+ * Copies pyramid artifacts (00-index.md, 01-summary/, etc.) from ephemeral scratch or run directories
+ * to permanent attachments storage (~/.hermes/kanban/boards/<board>/attachments/<taskId>/)
+ * before workspace cleanup occurs.
+ */
+export async function preserveTaskArtifactsFallback(args: {
+  boardSlug: string;
+  taskId: string;
+  workspacePath?: string;
+  hermesHome?: string;
+}): Promise<{ preserved: string[]; targetDir: string } | null> {
+  const { boardSlug, taskId, workspacePath, hermesHome } = args;
+  const baseHome = hermesHome || path.join(os.homedir(), ".hermes");
+  const sourceDir = workspacePath || path.join(baseHome, "kanban", "workspaces", taskId);
+  const targetDir = path.join(baseHome, "kanban", "boards", boardSlug, "attachments", taskId);
+
+  if (!fs.existsSync(sourceDir)) {
+    return null;
+  }
+
+  const preserved: string[] = [];
+  try {
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const copyRecursive = (src: string, dest: string) => {
+      const entries = fs.readdirSync(src, { withFileTypes: true });
+      for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+          if (!fs.existsSync(destPath)) fs.mkdirSync(destPath, { recursive: true });
+          copyRecursive(srcPath, destPath);
+        } else {
+          fs.copyFileSync(srcPath, destPath);
+          preserved.push(path.relative(sourceDir, srcPath));
+        }
+      }
+    };
+
+    copyRecursive(sourceDir, targetDir);
+    console.log(`[autonomous-hooks] Preserved ${preserved.length} artifacts to ${targetDir}`);
+    return { preserved, targetDir };
+  } catch (err) {
+    console.warn(`[autonomous-hooks] Error preserving artifacts for task ${taskId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * HK-05: Orchestrator Feedback Loop Hook
+ * Inspects tasks completed in the last 4 hours on boardSlug and compiles an executive release rollup.
+ */
+export async function executeOrchestratorFeedbackLoop(args: {
+  channelId: string;
+  boardSlug: string;
+  sinceHours?: number;
+  databasePath?: string;
+  emitRoomMessage?: (roomId: string, message: RoomMessage) => void;
+}): Promise<{ completedCount: number; summary: string } | null> {
+  const { channelId, boardSlug, sinceHours = 4, databasePath, emitRoomMessage } = args;
+  const dbPath =
+    databasePath || path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "board.db");
+
+  if (!fs.existsSync(dbPath)) return null;
+
+  try {
+    const sqlite = getSqliteDatabase(dbPath, { readonly: true });
+    const cutoffTime = new Date(Date.now() - sinceHours * 3600 * 1000).toISOString();
+
+    const doneTasks = sqlite
+      .prepare(
+        `SELECT id, title, assignee, result, latest_summary, updated_at
+         FROM tasks
+         WHERE status = 'done' AND updated_at >= ?
+         ORDER BY updated_at DESC`,
+      )
+      .all(cutoffTime) as Array<{
+      id: string;
+      title: string;
+      assignee: string | null;
+      result: string | null;
+      latest_summary: string | null;
+      updated_at: string;
+    }>;
+
+    if (doneTasks.length === 0) {
+      return { completedCount: 0, summary: "Nenhuma tarefa concluída na janela recente." };
+    }
+
+    const summaryLines = doneTasks.map(
+      (t) => `• \`${t.id}\` **${t.title}** (${t.assignee || "unassigned"})`,
+    );
+
+    const summary =
+      `🏆 **[ORCHESTRATOR FEEDBACK LOOP — C-SUITE ROLLUP]**\n` +
+      `Foram consolidadas **${doneTasks.length} tarefas concluídas** nas últimas ${sinceHours}h no board \`${boardSlug}\`:\n\n` +
+      summaryLines.join("\n") +
+      `\n\n🎯 *Ciclo de valor entregue e alinhado aos objetivos estratégicos.*`;
+
+    const csuiteRoom = await resolveTacticalRoomId(channelId, "chief-of-staff");
+    if (csuiteRoom) {
+      try {
+        const message = await appendRoomMessage({
+          roomId: csuiteRoom.roomId,
+          senderKind: "system",
+          senderId: null,
+          senderName: "Orchestrator Feedback Loop",
+          content: summary,
+          notice: {
+            kind: "card_done",
+            cardId: doneTasks[0].id,
+            cardTitle: `Rollup Executivo (${doneTasks.length} cards)`,
+            boardSlug,
+            npcName: "orchestrator",
+          },
+        });
+        if (emitRoomMessage) {
+          emitRoomMessage(csuiteRoom.roomId, message);
+        }
+      } catch {}
+    }
+
+    return { completedCount: doneTasks.length, summary };
+  } catch (err) {
+    console.warn(`[autonomous-hooks] Error in executeOrchestratorFeedbackLoop:`, err);
+    return null;
+  }
 }

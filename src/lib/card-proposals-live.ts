@@ -156,17 +156,19 @@ export function liveResolveDeps(): {
     createTask: async ({ ctx, task }) => {
       const body = taskBody(task);
       const defaultAssignee = task.assignee ? null : await resolveDefaultTaskAssignee(ctx);
-      if (defaultAssignee && !defaultAssignee.ok) throw new ProposalStepError(
-        409,
-        "default_assignee_unavailable",
-        "No active default implementation employee is assigned to this channel",
-      );
+      if (defaultAssignee && !defaultAssignee.ok)
+        throw new ProposalStepError(
+          409,
+          "default_assignee_unavailable",
+          "No active default implementation employee is assigned to this channel",
+        );
       const assignee = task.assignee ?? defaultAssignee?.profileName;
-      if (!assignee) throw new ProposalStepError(
-        409,
-        "default_assignee_unavailable",
-        "No active default implementation employee is assigned to this channel",
-      );
+      if (!assignee)
+        throw new ProposalStepError(
+          409,
+          "default_assignee_unavailable",
+          "No active default implementation employee is assigned to this channel",
+        );
       const res = await ctx.client.kanban.createTask(
         ctx.boardSlug,
         {

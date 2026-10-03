@@ -2358,6 +2358,7 @@ const ko: Record<string, string> = {
   "nav.tasks": "작업",
   "nav.artifacts": "아티팩트",
   "nav.meetings": "미팅",
+  "nav.review": "3D 스튜디오 리뷰",
   "gateways.employeesTitle": "이 게이트웨이의 직원",
   "gateways.employeesHint": "직원(Hermes 프로필) 등록·인격·외형·모델은 직원 화면에서 관리합니다.",
   "gateways.employeesOpen": "직원 관리 열기 →",

@@ -2,10 +2,15 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, RefreshCw } from "lucide-react";
+import { CalendarDays, RefreshCw, Sparkles } from "lucide-react";
 import KanbanCalendarView from "@/components/kanban/KanbanCalendarView";
 import MinutesModal from "@/components/MinutesModal";
-import { ProjectPicker, useSelectedBoard, type ProjectOption } from "@/components/kanban/ProjectPicker";
+import ScrumCeremonyModal from "@/components/kanban/ScrumCeremonyModal";
+import {
+  ProjectPicker,
+  useSelectedBoard,
+  type ProjectOption,
+} from "@/components/kanban/ProjectPicker";
 import { createKanbanApi } from "@/components/kanban/kanban-api";
 import { flattenTasks, orderColumns } from "@/components/kanban/kanban-view-model";
 import { useWorkspaceChannels } from "@/components/workspace/use-workspace-channels";
@@ -30,15 +35,24 @@ export default function MeetingsPage() {
 function MeetingsPageInner() {
   const t = useT();
   const router = useRouter();
-  const { channels, selectedChannelId, setSelectedChannelId, loading: channelsLoading } = useWorkspaceChannels();
+  const {
+    channels,
+    selectedChannelId,
+    setSelectedChannelId,
+    loading: channelsLoading,
+  } = useWorkspaceChannels();
 
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [tasks, setTasks] = useState<readonly KanbanTask[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+  const [ceremonyModalOpen, setCeremonyModalOpen] = useState(false);
 
-  const { selected: selectedBoard, select: selectBoard } = useSelectedBoard(selectedChannelId, projects);
+  const { selected: selectedBoard, select: selectBoard } = useSelectedBoard(
+    selectedChannelId,
+    projects,
+  );
 
   // Fetch projects/boards for selected channel
   useEffect(() => {
@@ -134,11 +148,16 @@ function MeetingsPageInner() {
                 </select>
               </div>
             )}
-            <ProjectPicker
-              options={projects}
-              selected={selectedBoard}
-              onSelect={selectBoard}
-            />
+            <ProjectPicker options={projects} selected={selectedBoard} onSelect={selectBoard} />
+            <button
+              type="button"
+              onClick={() => setCeremonyModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-xs shadow-2xs transition-colors cursor-pointer"
+              title="Instanciar Cerimônia Scrum 3D"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Cerimônia Scrum</span>
+            </button>
             <button
               type="button"
               onClick={() => setRefreshTick((n) => n + 1)}
@@ -172,6 +191,17 @@ function MeetingsPageInner() {
           onClose={() => setSelectedMeetingId(null)}
         />
       )}
+
+      <ScrumCeremonyModal
+        isOpen={ceremonyModalOpen}
+        onClose={() => setCeremonyModalOpen(false)}
+        channelId={selectedChannelId}
+        boardSlug={selectedBoard ?? ""}
+        onCeremonyCreated={(meetingId) => {
+          setRefreshTick((n) => n + 1);
+          setSelectedMeetingId(meetingId);
+        }}
+      />
     </div>
   );
 }

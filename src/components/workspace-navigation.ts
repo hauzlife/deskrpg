@@ -18,7 +18,8 @@ export type WorkspaceNavKey =
   | "channels"
   | "tasks"
   | "artifacts"
-  | "meetings";
+  | "meetings"
+  | "review";
 
 export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }> = [
   { key: "characters", href: "/characters" },
@@ -28,6 +29,7 @@ export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }
   { key: "tasks", href: "/tasks" },
   { key: "artifacts", href: "/artifacts" },
   { key: "meetings", href: "/meetings" },
+  { key: "review", href: "/ui2-review" },
 ];
 
 /** The employees (Hermes profile) screen URL. Employee management happens only at `/profiles`. */

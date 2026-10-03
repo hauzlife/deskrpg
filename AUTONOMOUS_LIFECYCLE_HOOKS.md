@@ -42,15 +42,15 @@ flowchart TD
     classDef STOPPED fill:#2c3e50,stroke:#7f8c8d,color:#fff;
 
     A["Task Completion Event\nkanban_complete"]:::GREEN --> B{"Hook 1:\nPostCompletionActionHook"}:::WARNING
-    
+
     B -->|"findings.severity >= HIGH"| C["Hook 2: Auto-Remediation\nkanban_create para Dev/SRE"]:::CRITICAL
     B -->|"Artifact Pyramid Gerada"| D["Hook 3:\nArtifactPreservationHook"]:::GREEN
     B -->|"Status / Notificação"| E["Hook 4:\nIncidentRoomDispatchHook"]:::WARNING
-    
+
     C --> F["Engineering / Infra Backlog\nCards P0/P1 Criados"]:::GREEN
     E --> G["Salas Táticas DeskRPG\nWar Room / Incident Response"]:::GREEN
     D --> H["Armazenamento Permanente\nattachments/ e Vault"]:::GREEN
-    
+
     I["Card Bloqueado ou Falho"]:::CRITICAL --> J{"Hook 6:\nCircuitBreakerHook"}:::WARNING
     J --> K["Escalação Automática\nOps Control / C-Suite"]:::CRITICAL
 ```
@@ -60,6 +60,7 @@ flowchart TD
 ## 3. Especificação Detalhada dos 6 Hooks
 
 ### Hook 1 — `PostCompletionActionHook` (Auto-Triage & Remediation Dispatcher)
+
 - **Local de Execução:** DeskRPG Event Sink (`src/server/automation-events.ts`) ou Hermes Kanban Plugin (`hooks/task_completion.py`).
 - **Gatilho:** Evento `task.status` com `to = "done"` ou `task.run.finished`.
 - **Responsabilidade:** Inspecionar os metadados do run final (`task_runs.metadata`). Se houver indicadores de vulnerabilidade, falha ou débito detectado:
@@ -72,6 +73,7 @@ flowchart TD
 ---
 
 ### Hook 2 — `IncidentRoomDispatchHook` (Notificação Granular em Salas Táticas)
+
 - **Local de Execução:** `src/server/automation-events.ts` (função `postNotice`).
 - **Gatilho:** Qualquer transição para `card_blocked`, `card_done` (com anomalias) ou `cron.error`.
 - **Problema Atual:** O código atual envia mensagens apenas para o chat geral (`Office` / "Whole Office") como aviso passivo de sistema. Ninguém escuta.
@@ -87,6 +89,7 @@ flowchart TD
 ---
 
 ### Hook 3 — `ArtifactPreservationHook` (Persistência da Pirâmide de Artefatos)
+
 - **Local de Execução:** Hermes Gateway / Dispatcher Runtime (`kanban_dispatcher.py`).
 - **Gatilho:** Evento anterior ao `cleanup` do workspace efêmero (`workspace_kind: 'scratch'`).
 - **Problema Atual:** O Hermes só copia para `attachments/` o arquivo declarado pontualmente no array `artifacts`. O restante da pasta temporária (`01-summary/`, `02-analysis/`, `03-dossiers/`) é deletado do disco, destruindo os dados brutos da auditoria.
@@ -99,6 +102,7 @@ flowchart TD
 ---
 
 ### Hook 4 — `ReviewGateTransitionHook` (Handoff Automático de Code Review & PR)
+
 - **Local de Execução:** Hermes Kanban Lifecycle Controller (`kanban_transitions.py`) + DeskRPG Poller.
 - **Gatilho:** Card movido para `status = 'review'` ou pull request aberto no GitHub.
 - **Comportamento do Hook:**
@@ -110,6 +114,7 @@ flowchart TD
 ---
 
 ### Hook 5 — `OrchestratorFeedbackLoopHook` (Sentinela de Fechamento de Épicos)
+
 - **Local de Execução:** Agendador de Sentinela Periódica (`cron_job_origins`).
 - **Gatilho:** Executado a cada 4 horas pelo `orchestrator` e `kanban-strategist`.
 - **Comportamento do Hook:**
@@ -120,6 +125,7 @@ flowchart TD
 ---
 
 ### Hook 6 — `CircuitBreakerDeadlockHook` (Anti-Loop e Escalação de Falhas)
+
 - **Local de Execução:** Dispatcher Watchdog (`kanban_dispatcher.py`).
 - **Gatilho:** Tarefa acumulando `consecutive_failures >= 3` ou tempo de execução excedido (`max_runtime_seconds`).
 - **Comportamento do Hook:**
@@ -130,6 +136,7 @@ flowchart TD
 ---
 
 ### Hook 7 — `StarvationSentinelHook` (Alimentação Contínua de Backlog)
+
 - **Local de Execução:** DeskRPG Lifecycle Hooks (`autonomous-lifecycle-hooks.ts`).
 - **Gatilho:** 0 tarefas ativas (`ready`, `running`, `review`) em qualquer um dos 4 boards de produto.
 - **Comportamento do Hook:** Aciona imediatamente o `product-manager` e `implementation-planner` para decompor metas e manter a tripulação alimentada.
@@ -137,6 +144,7 @@ flowchart TD
 ---
 
 ### Hook 8 — `BlockerTriageHook` (Triagem Ativa de Bloqueio & Auto-Remediação)
+
 - **Local de Execução:** DeskRPG Event Sink (`automation-events.ts` -> `autonomous-lifecycle-hooks.ts`).
 - **Gatilho:** Evento `task.status` com `to = "blocked"`.
 - **Comportamento do Hook (5 Ramos Cirúrgicos):**
@@ -149,6 +157,7 @@ flowchart TD
 ---
 
 ### Hook 9 — `QuotaModelSentinelHook` (Sentinela Autônomo de Quota, Modelo e Concorrência)
+
 - **Local de Execução:** Hermes Cron (a cada 15min) + Sentinel Reativo (`backlog_starvation_sentinel.py` e `executeQuotaModelSentinelLifecycle`).
 - **Gatilho:** Cron recorrente de 15 minutos ou varredura de emergência pós-queda.
 - **Custo:** 0 tokens LLM (execução 100% determinística via script SQLite).
@@ -162,17 +171,17 @@ flowchart TD
 
 ## 4. Matriz de Mapeamento dos Hooks por Componente
 
-| Hook ID | Nome do Gancho | Onde Implementar | Gatilho de Disparo | Ação Executada |
-| :--- | :--- | :--- | :--- | :--- |
-| **HK-01** | `PostCompletionAction` | DeskRPG (`automation-events.ts`) | Card atinge `done` com findings | Cria tarefas de remediação (`kanban_create`) para Dev/SRE. |
-| **HK-02** | `IncidentRoomDispatch` | DeskRPG (`automation-events.ts`) | Card crítico concluído ou bloqueado | Publica alerta com `@mention` na sala tática específica do tema. |
-| **HK-03** | `ArtifactPreservation` | Hermes (`kanban_dispatcher.py`) | Pre-cleanup de workspace `scratch` | Copia recursivamente L1/L2/L3 da pirâmide para `attachments/`. |
-| **HK-04** | `ReviewGateTransition` | Hermes (`kanban_transitions.py`) | Card entra em `review` | Spawna `reviewer`, aprova ou solicita mudanças automaticamente. |
-| **HK-05** | `OrchestratorFeedback` | Hermes Cron (`orchestrator`) | A cada 4h (varredura de `done`) | Valida encerramento de épicos e alimenta novas metas no backlog. |
-| **HK-06** | `CircuitBreakerDeadlock`| Hermes Dispatcher Watchdog | `consecutive_failures >= 3` | Isola o card em quarentena e alerta o `Ops Control`. |
-| **HK-07** | `StarvationSentinel`   | DeskRPG (`autonomous-lifecycle-hooks.ts`) | 0 tarefas ativas no board | Aciona PM/Planner para gerar novos cards. |
-| **HK-08** | `BlockerTriage`        | DeskRPG (`autonomous-lifecycle-hooks.ts`) | Card transiciona para `blocked` | Auto-remedia scratch/quota/sessão, despacha P0 de ambiente, decisão ou Owner. |
-| **HK-09** | `QuotaModelSentinel`   | Hermes Cron + DeskRPG Sentinel | A cada 15min (ou sob demanda) | Purga overrides, destrava cards por 429/quota e monitora starvation com custo zero. |
+| Hook ID   | Nome do Gancho           | Onde Implementar                          | Gatilho de Disparo                  | Ação Executada                                                                      |
+| :-------- | :----------------------- | :---------------------------------------- | :---------------------------------- | :---------------------------------------------------------------------------------- |
+| **HK-01** | `PostCompletionAction`   | DeskRPG (`automation-events.ts`)          | Card atinge `done` com findings     | Cria tarefas de remediação (`kanban_create`) para Dev/SRE.                          |
+| **HK-02** | `IncidentRoomDispatch`   | DeskRPG (`automation-events.ts`)          | Card crítico concluído ou bloqueado | Publica alerta com `@mention` na sala tática específica do tema.                    |
+| **HK-03** | `ArtifactPreservation`   | Hermes (`kanban_dispatcher.py`)           | Pre-cleanup de workspace `scratch`  | Copia recursivamente L1/L2/L3 da pirâmide para `attachments/`.                      |
+| **HK-04** | `ReviewGateTransition`   | Hermes (`kanban_transitions.py`)          | Card entra em `review`              | Spawna `reviewer`, aprova ou solicita mudanças automaticamente.                     |
+| **HK-05** | `OrchestratorFeedback`   | Hermes Cron (`orchestrator`)              | A cada 4h (varredura de `done`)     | Valida encerramento de épicos e alimenta novas metas no backlog.                    |
+| **HK-06** | `CircuitBreakerDeadlock` | Hermes Dispatcher Watchdog                | `consecutive_failures >= 3`         | Isola o card em quarentena e alerta o `Ops Control`.                                |
+| **HK-07** | `StarvationSentinel`     | DeskRPG (`autonomous-lifecycle-hooks.ts`) | 0 tarefas ativas no board           | Aciona PM/Planner para gerar novos cards.                                           |
+| **HK-08** | `BlockerTriage`          | DeskRPG (`autonomous-lifecycle-hooks.ts`) | Card transiciona para `blocked`     | Auto-remedia scratch/quota/sessão, despacha P0 de ambiente, decisão ou Owner.       |
+| **HK-09** | `QuotaModelSentinel`     | Hermes Cron + DeskRPG Sentinel            | A cada 15min (ou sob demanda)       | Purga overrides, destrava cards por 429/quota e monitora starvation com custo zero. |
 
 ---
 
@@ -195,12 +204,15 @@ Para transformar a HIVE em uma máquina 100% autônoma que fecha o circuito:
 ## 6. Governança da Arquitetura Híbrida (Hooks Reativos vs. Crons Diários em Batch)
 
 ### O Problema do Polling Cego (Depreciação de Crons Curtos)
+
 Crons recorrentes de frequência agressiva (`every 5m`, `every 10m`, `every 60m`) que disparam agentes LLM geravam três falhas críticas no ecossistema:
+
 1. **Saturação de Sessões:** O Hermes atingia o teto simultâneo de `6/6 sessões ativas`, congelando o dispatcher.
 2. **Rate Limiting da API:** Disparos contínuos provocavam `HTTP 429 (usage limit)` e `HTTP 400` por tentativas com modelos incompatíveis.
 3. **Tempestades de Concorrência:** Duplicatas de cron configuradas em múltiplos perfis auxiliares (ex: `implementation-planner` e `technical-writer`) disparavam simultaneamente às 09:00, 10:00 e 16:00.
 
 ### O Modelo Híbrido Definitivo
+
 - **Hooks Reativos (Tempo Real / Event-Driven):** O agente dorme em idle até que um fato mensurável ocorra (`card_blocked`, `card_done`, `review_requested`, `starvation`). O hook (`HK-01` a `HK-08`) atua imediatamente com custo zero em repouso.
 - **Crons Diários em Batch (Buffer de 24h):** Cada especialista mantém no máximo **1 cron diário**, distribuído em horários escalonados para evitar concorrência. Esse cron atua como buffer para varrer o lote acumulado, reavaliar metas do dia e garantir higiene dos boards:
   - `08:30` — SRE / Ops (Health check e estabilidade de infra)
@@ -219,15 +231,16 @@ Implementado em `src/lib/github-lifecycle-hooks.ts` e exposto via `POST /api/web
 
 ### O Funil dos 5 Portões de Fusão
 
-| Portão | Responsável | Evento de Disparo | Ação do Hook | Critério de Passagem |
-| :--- | :--- | :--- | :--- | :--- |
-| **Gate 1 (Mergeable)** | GitHub Sentinel | `pull_request.opened` / `synchronize` | Se `mergeable === false`, bloqueia o card (`kind: conflict`) e alerta o dev para rebase. | Sem conflitos com a branch base. |
-| **Gate 2 (CI/Checks)** | GitHub CI Sentinel | `check_suite.completed` | Se `failure`, bloqueia o card (`kind: capability`). Se `success`, aciona o `@qa-engineer`. | 100% verde no GitHub Actions. |
-| **Gate 3 (Code Review)** | `@reviewer` | `pull_request_review.submitted` | Se `changes_requested`, retorna para o dev. Se `approved`, convoca o `@product-manager`. | Aprovação formal da engenharia (`gh pr review --approve`). |
-| **Gate 4 (QA Homologation)**| `@qa-engineer` | `issue_comment` (no PR) | QA homologa cenários em staging, podendo comitar testes adicionais na branch. | Comentário formal `[QA-APROVADO]` no PR. |
-| **Gate 5 (PM Acceptance)** | `@product-manager` | `issue_comment` (no PR) | PM valida critérios de aceite do card e negócio, emitindo o sign-off final. | Comentário formal `[APROVADO]` do PM. |
+| Portão                       | Responsável        | Evento de Disparo                     | Ação do Hook                                                                               | Critério de Passagem                                       |
+| :--------------------------- | :----------------- | :------------------------------------ | :----------------------------------------------------------------------------------------- | :--------------------------------------------------------- |
+| **Gate 1 (Mergeable)**       | GitHub Sentinel    | `pull_request.opened` / `synchronize` | Se `mergeable === false`, bloqueia o card (`kind: conflict`) e alerta o dev para rebase.   | Sem conflitos com a branch base.                           |
+| **Gate 2 (CI/Checks)**       | GitHub CI Sentinel | `check_suite.completed`               | Se `failure`, bloqueia o card (`kind: capability`). Se `success`, aciona o `@qa-engineer`. | 100% verde no GitHub Actions.                              |
+| **Gate 3 (Code Review)**     | `@reviewer`        | `pull_request_review.submitted`       | Se `changes_requested`, retorna para o dev. Se `approved`, convoca o `@product-manager`.   | Aprovação formal da engenharia (`gh pr review --approve`). |
+| **Gate 4 (QA Homologation)** | `@qa-engineer`     | `issue_comment` (no PR)               | QA homologa cenários em staging, podendo comitar testes adicionais na branch.              | Comentário formal `[QA-APROVADO]` no PR.                   |
+| **Gate 5 (PM Acceptance)**   | `@product-manager` | `issue_comment` (no PR)               | PM valida critérios de aceite do card e negócio, emitindo o sign-off final.                | Comentário formal `[APROVADO]` do PM.                      |
 
 ### Fusão Segura & Regra Inviolável de Transição para 'Done'
+
 1. **Permanência Obrigatória em 'Review':** Enquanto o PR estiver tramitando nos 5 Portões de Fusão, o card no Kanban **deve permanecer estritamente na coluna `review`** (ou `blocked` em caso de conflito ou quebra de CI).
 2. **Intercepção de 'Done' Antecipado (`enforceReviewGateForPrTasks`):** O `automation-events.ts` intercepta qualquer tentativa de mover um card vinculado a PR aberto para `done`, revertendo o status para `review` e alertando a sala tática.
 3. **Merge Efetivo como Gatilho Exclusivo:** O card só é promovido para `done` quando o webhook do GitHub confirma o merge real (`action: 'closed'`, `merged: true`) após a aprovação de todos os 5 portões.
@@ -240,15 +253,16 @@ Para eliminar o risco de "tarefas órfãs" e garantir 100% de autonomia sem inte
 
 ### A Pirâmide de Níveis Operacionais
 
-| Nível | Classificação | Escopo & Comportamento | Responsáveis & Ações |
-| :--- | :--- | :--- | :--- |
-| **L1** | **Quick / Auto-Remediated** | Resoluções mecânicas, determinísticas e de custo zero em tokens. Executado imediatamente pelo kernel do DeskRPG ou pelo sentinela do cron. | **Hooks HK-08 / HK-09:** Auto-heal de workspace scratch vazio para worktree, purga de leases órfãos em `active_sessions.json`, limpeza incondicional de `model_override` / `provider_override` e auto-unblock de rate limits temporários (HTTP 429). |
-| **L2** | **Complex / Specialist Remediation** | Desafios técnicos que exigem raciocínio especializado de agentes, mas sem necessidade de intervenção do Soberano. | **Especialistas via Cards P0:** Quebra de ambiente `.venv` (`[P0-ENV-FIX]` -> `@platform-engineer`), ambiguidade em critérios de aceite (`[P0-DECISÃO]` -> `@product-manager`), homologação de PRs (`@qa-engineer` / `@reviewer`). O card original aguarda em `todo` como dependente. |
-| **L3** | **Owner-Gated / Executive Triage** | Bloqueios intransponíveis por agentes que demandam segredos físicos, decisões financeiras ou autorizações exclusivas do Soberano. | **C-Suite & Salas de Comando:** Criação automática de `[P0-OWNER-TRIAGE]` atribuído ao `@product-manager` / `@orchestrator`. Alertas imediatos nas salas `Ops Control` e `War Room`. |
+| Nível  | Classificação                        | Escopo & Comportamento                                                                                                                     | Responsáveis & Ações                                                                                                                                                                                                                                                                  |
+| :----- | :----------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **L1** | **Quick / Auto-Remediated**          | Resoluções mecânicas, determinísticas e de custo zero em tokens. Executado imediatamente pelo kernel do DeskRPG ou pelo sentinela do cron. | **Hooks HK-08 / HK-09:** Auto-heal de workspace scratch vazio para worktree, purga de leases órfãos em `active_sessions.json`, limpeza incondicional de `model_override` / `provider_override` e auto-unblock de rate limits temporários (HTTP 429).                                  |
+| **L2** | **Complex / Specialist Remediation** | Desafios técnicos que exigem raciocínio especializado de agentes, mas sem necessidade de intervenção do Soberano.                          | **Especialistas via Cards P0:** Quebra de ambiente `.venv` (`[P0-ENV-FIX]` -> `@platform-engineer`), ambiguidade em critérios de aceite (`[P0-DECISÃO]` -> `@product-manager`), homologação de PRs (`@qa-engineer` / `@reviewer`). O card original aguarda em `todo` como dependente. |
+| **L3** | **Owner-Gated / Executive Triage**   | Bloqueios intransponíveis por agentes que demandam segredos físicos, decisões financeiras ou autorizações exclusivas do Soberano.          | **C-Suite & Salas de Comando:** Criação automática de `[P0-OWNER-TRIAGE]` atribuído ao `@product-manager` / `@orchestrator`. Alertas imediatos nas salas `Ops Control` e `War Room`.                                                                                                  |
 
 ### A Regra de Ouro da Automação de Quota, Modelo e Sessão
 
 > **REGRA FUNDAMENTAL:**
+>
 > 1. Quando uma tarefa é bloqueada com `block_kind = 'quota'` ou `block_kind = 'model'` (ou registra erros transitórios de rate limit HTTP 429 / sessão 6/6), o sistema executa **auto-remediação imediata em nível L1**: limpa leases órfãos, zera os campos `model_override` e `provider_override` para garantir que o worker herde o modelo estável padrão do profile, e redefine o status para `ready`.
 > 2. Se o bloqueio for de infraestrutura física, credenciais externas, mTLS bancário ou persistir após auto-remediação, o `BlockerTriageHook` (HK-08) **nunca deixa o card morrer silenciosamente em `blocked`**: ele escala imediatamente a tarefa para **Nível L3**, gerando um card `[P0-OWNER-TRIAGE]` para a liderança executiva tomar providências e disparando alerta na sala tática.
 
@@ -257,12 +271,15 @@ Para eliminar o risco de "tarefas órfãs" e garantir 100% de autonomia sem inte
 ## 9. Resolução Definitiva da Proliferação e Recursão de Tarefas (Root-Cause Fix)
 
 ### 9.1. O Diagnóstico da Causa Raiz da Explosão
+
 A criação massiva de mais de 440 cartões idênticos de `[P0-OWNER-TRIAGE]` decorria de 3 falhas combinadas no motor de eventos:
+
 1. **Recursão Infinita Sem Trava:** Quando um card de triagem `[P0-OWNER-TRIAGE]` sofria falha ou bloqueio, o `BlockerTriageHook` era acionado sobre ele mesmo, criando uma triagem da triagem (`[P0-OWNER-TRIAGE] Triagem executiva L3 para card bloqueado t_triage_...`), deflagrando uma árvore binária exponencial (exatamente 63 cópias por raiz).
 2. **Perda do Marcador de Deduplicação:** O `insertTaskSafely` verificava `body LIKE '%dedupKey%'`, mas não persistia o marcador `<!-- dedupKey -->` no corpo do cartão caso o chamador omitisse a tag. Assim, a cada verificação subsequente o banco retornava nulo e criava um novo card. Além disso, a busca por título idêntico era ignorada quando um `dedupKey` era fornecido.
 3. **Ausência de Teto de Triagem por Board:** Múltiplos bloqueios em um mesmo board criavam dezenas de cartões de triagem independentes em vez de consolidar os incidentes.
 
 ### 9.2. As 3 Barreira de Proteção Implementadas
+
 1. **Guarda de Recursão Rígida (Recursion Guard):**
    - Se o card bloqueado possuir no título `[P0-OWNER-TRIAGE]`, `[P0-DECISÃO]`, `[P0-ENV-FIX]` ou `[EPIC-TRIAGE]`, o hook **rejeita categoricamente a criação de qualquer nova tarefa**, coloca o card em quarentena (`block_kind = 'quarantine'`) e encerra o ciclo.
 2. **Teto de Triagem por Board (Board-Level Triage Cap):**

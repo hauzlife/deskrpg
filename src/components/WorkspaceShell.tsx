@@ -3,7 +3,16 @@
 import type { MouseEvent, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UsersRound, Network, UserRound, Building2, KanbanSquare, Package, CalendarDays } from "lucide-react";
+import {
+  UsersRound,
+  Network,
+  UserRound,
+  Building2,
+  KanbanSquare,
+  Package,
+  CalendarDays,
+  Activity,
+} from "lucide-react";
 import DeskRpgMark from "./DeskRpgMark";
 import OfficeBuilding from "./OfficeBuilding";
 import LocaleSwitcher from "./LocaleSwitcher";
@@ -26,6 +35,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     tasks: KanbanSquare,
     artifacts: Package,
     meetings: CalendarDays,
+    review: Activity,
   } as const;
   const links = WORKSPACE_NAV.map(({ key, href }) => ({
     href,
@@ -81,11 +91,17 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
             <KanbanSquare size={14} aria-hidden="true" />
             <span>{t("nav.tasks")}</span>
           </Link>
-          <Link href="/artifacts" className="workspace-sidebar-action-link flex items-center gap-1.5">
+          <Link
+            href="/artifacts"
+            className="workspace-sidebar-action-link flex items-center gap-1.5"
+          >
             <Package size={14} aria-hidden="true" />
             <span>{t("nav.artifacts")}</span>
           </Link>
-          <Link href="/meetings" className="workspace-sidebar-action-link flex items-center gap-1.5">
+          <Link
+            href="/meetings"
+            className="workspace-sidebar-action-link flex items-center gap-1.5"
+          >
             <CalendarDays size={14} aria-hidden="true" />
             <span>{t("nav.meetings")}</span>
           </Link>

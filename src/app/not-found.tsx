@@ -27,15 +27,9 @@ export default function NotFound() {
         <span className="text-xs font-bold tracking-widest text-primary uppercase mb-2">
           DeskRPG Office Security
         </span>
-        <h1 className="text-4xl font-extrabold tracking-tight text-text mb-2">
-          404
-        </h1>
-        <p className="text-lg font-semibold text-text-secondary mb-1">
-          {ko.heading}
-        </p>
-        <p className="text-sm text-text-dim mb-6">
-          Room or resource not found on this floor.
-        </p>
+        <h1 className="text-4xl font-extrabold tracking-tight text-text mb-2">404</h1>
+        <p className="text-lg font-semibold text-text-secondary mb-1">{ko.heading}</p>
+        <p className="text-sm text-text-dim mb-6">Room or resource not found on this floor.</p>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full">
           <Link

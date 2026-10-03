@@ -406,6 +406,15 @@ export default function KanbanCard({
           <span className="font-mono text-[10px] font-bold text-text-secondary bg-surface-raised px-1 py-0.5 rounded tracking-wide border border-border">
             {task.id}
           </span>
+          {(task.consecutive_failures ?? 0) >= 3 && (
+            <span
+              className="inline-flex items-center gap-1 text-[9px] font-bold text-danger bg-danger/10 border border-danger/30 rounded px-1.5 py-0.5 tracking-wide"
+              title={`Disjuntor Desarmado: ${task.consecutive_failures} falhas consecutivas`}
+            >
+              <AlertTriangle className="w-2.5 h-2.5" />
+              <span>DISJUNTOR ({task.consecutive_failures})</span>
+            </span>
+          )}
         </div>
         <div className="font-semibold text-text leading-snug break-words">{task.title}</div>
         <div

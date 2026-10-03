@@ -2276,6 +2276,7 @@ const zh: Record<string, string> = {
   "nav.tasks": "任务",
   "nav.artifacts": "产物",
   "nav.meetings": "会议",
+  "nav.review": "3D工作室审查",
   "gateways.employeesTitle": "此网关的员工",
   "gateways.employeesHint": "员工(Hermes 配置文件)的注册、人格、外观与模型在员工页面管理。",
   "gateways.employeesOpen": "打开员工管理 →",

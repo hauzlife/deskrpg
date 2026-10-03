@@ -304,7 +304,6 @@ export function validateNetworkSecurity(req: NextRequest): { allowed: boolean; r
   return { allowed: false, reason: `Client IP ${clientIp} not in allowed network range` };
 }
 
-
 /**
  * Synchronizes incoming alerts directly with the local Artifact Pyramid.
  * Ensures zero data loss, strict idempotency, and full traceability.
@@ -337,7 +336,9 @@ export function syncAlertToArtifactPyramid(
     const server = alert.labels.instance || alert.labels.server || "187.77.141.106";
     const worker = alert.labels.bot || alert.labels.worker || alert.labels.group || "cluster";
 
-    let existing = history.events.find((e: any) => e.fingerprint === fp || e.alertname === alertname);
+    const existing = history.events.find(
+      (e: any) => e.fingerprint === fp || e.alertname === alertname,
+    );
     if (existing) {
       existing.last_seen = nowIso;
       existing.status = isResolved ? "resolved" : "firing";
@@ -357,7 +358,10 @@ export function syncAlertToArtifactPyramid(
         last_seen: nowIso,
         occurrences: 1,
         status: "firing",
-        notes: alert.annotations.summary || alert.annotations.description || "Alerta registrado no pyramid",
+        notes:
+          alert.annotations.summary ||
+          alert.annotations.description ||
+          "Alerta registrado no pyramid",
       });
     }
 
@@ -594,7 +598,7 @@ export async function POST(req: NextRequest) {
               } catch {}
 
               resolvedTasks.push({ taskId: t.id, board: boardSlug, title: t.title });
-            syncAlertToArtifactPyramid(alert, boardSlug, true);
+              syncAlertToArtifactPyramid(alert, boardSlug, true);
 
               // Post resolution notice asynchronously to tactical room
               notificationPromises.push(
@@ -701,7 +705,11 @@ export async function POST(req: NextRequest) {
             .prepare(
               "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)",
             )
-            .run(masterCard.id, JSON.stringify({ alertname: labels.alertname, severity, summary }), now);
+            .run(
+              masterCard.id,
+              JSON.stringify({ alertname: labels.alertname, severity, summary }),
+              now,
+            );
         } catch {}
 
         result = {
