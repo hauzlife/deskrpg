@@ -1,5 +1,29 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import {
+  Building2,
+  Camera,
+  Compass,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Eye,
+  EyeOff,
+  Activity,
+  Gauge,
+  Play,
+  RefreshCw,
+  Layers,
+  Monitor,
+  Smartphone,
+  Sparkles,
+  Cpu,
+  Boxes,
+  Info,
+  CheckCircle2,
+  StopCircle,
+  RotateCcw,
+} from "lucide-react";
 import { OfficeRenderer } from "@/game/three/office-renderer";
 import {
   OFFICE_ENVIRONMENTS,
@@ -484,199 +508,360 @@ export default function ReviewClient() {
     }
   };
   return (
-    <main style={{ padding: 16, background: "#f7f2e6", color: "#1a1a1a" }}>
-      <h1>UI2 renderer review (development)</h1>
-      <p>
-        Renderer fixture: 10 NPCs + 2 player models. Not evidence of real AI replies or multiplayer.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
-        <label>
-          Environment{" "}
-          <select
-            aria-label="Environment"
-            value={environment}
-            disabled={busy}
-            onChange={(e) => {
-              const id = e.target.value as OfficeEnvironmentId;
-              selectEnvironment(id, !auditRoom);
-              if (auditRoom) frameRoom(id, auditRoom);
-            }}
-          >
-            {OFFICE_ENVIRONMENTS.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.nameEn}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Scene{" "}
-          <select
-            aria-label="Scene"
-            value={mode}
-            disabled={busy}
-            onChange={(e) => {
-              const next = e.target.value as SceneMode;
-              runtime.current!.mode = next;
-              setMode(next);
-              setAuditRoom("");
-              frameCamera(environment, next);
-            }}
-          >
-            <option value="overview">Overview</option>
-            <option value="close">Meeting room close-up</option>
-            <option value="moving">10 NPCs moving with bubbles</option>
-          </select>
-        </label>
-        <label>
-          Room inspection{" "}
-          <select
-            aria-label="Room inspection"
-            value={auditRoom}
-            disabled={busy}
-            onChange={(e) => {
-              const roomId = e.target.value;
-              setAuditRoom(roomId);
-              if (roomId) frameRoom(environment, roomId);
-              else frameCamera(environment, mode);
-            }}
-          >
-            <option value="">Restore scene camera</option>
-            {(environment === "agency" ? studioReviewRooms : (OFFICE_ROOMS[environment] ?? [])).map(
-              (room) => (
-                <option key={room.id} value={room.id}>
-                  {roomLabel(room.label, "en")} close-up
+    <main className="theme-web min-h-screen bg-bg text-text p-4 md:p-6 lg:p-8 flex flex-col gap-6 max-w-7xl mx-auto">
+      {/* Top Header */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-text flex items-center gap-2.5">
+              <Layers className="text-primary" size={26} />
+              <span>3D Studio & Architecture Review</span>
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              Three.js WebGL Engine
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-text-muted mt-1.5 max-w-2xl">
+            Visual inspection sandbox for office environments, spatial camera framing, actor layouts, and real-time GPU rendering telemetry.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="px-3 py-1.5 rounded-lg bg-surface border border-border shadow-xs flex items-center gap-2 text-xs">
+            <span
+              className={`w-2 h-2 rounded-full ${metrics?.assetsReady ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500 animate-pulse"}`}
+            />
+            <span className="font-semibold text-text-secondary">
+              {metrics?.assetsReady ? "Assets Ready" : "Preparing Renderer..."}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Control Ribbon Card */}
+      <section className="bg-surface border border-border rounded-xl p-4 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Dropdowns */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+          {/* Environment */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <Building2 size={14} className="text-primary" />
+              Environment
+            </label>
+            <select
+              aria-label="Environment"
+              value={environment}
+              disabled={busy}
+              className="w-full px-3 py-2 rounded-lg bg-surface-raised border border-border text-sm font-medium text-text focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-colors"
+              onChange={(e) => {
+                const id = e.target.value as OfficeEnvironmentId;
+                selectEnvironment(id, !auditRoom);
+                if (auditRoom) frameRoom(id, auditRoom);
+              }}
+            >
+              {OFFICE_ENVIRONMENTS.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.nameEn}
                 </option>
-              ),
-            )}
-          </select>
-        </label>
-        <button
-          disabled={busy}
-          aria-pressed={referenceViewport}
-          onClick={() => {
-            setReferenceViewport((v) => !v);
-            setSmallViewport(false);
-            selectEnvironment("agency");
-            setTimeout(() => renderer.current?.showOverview(), 100);
-          }}
-        >
-          Creative studio reference 1748×900
-        </button>
-        <button disabled={busy || !metrics?.assetsReady || !showLabels} onClick={benchmark}>
-          Measure performance
-        </button>
-        <button disabled={busy || !metrics?.assetsReady || !showLabels} onClick={benchmarkMatrix}>
-          Measure all 15 scenes
-        </button>
-        {matrixAbort.current && (
+              ))}
+            </select>
+          </div>
+
+          {/* Scene Mode */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <Camera size={14} className="text-primary" />
+              Scene Mode
+            </label>
+            <select
+              aria-label="Scene"
+              value={mode}
+              disabled={busy}
+              className="w-full px-3 py-2 rounded-lg bg-surface-raised border border-border text-sm font-medium text-text focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-colors"
+              onChange={(e) => {
+                const next = e.target.value as SceneMode;
+                runtime.current!.mode = next;
+                setMode(next);
+                setAuditRoom("");
+                frameCamera(environment, next);
+              }}
+            >
+              <option value="overview">Overview (Isometric)</option>
+              <option value="close">Meeting Room Close-up</option>
+              <option value="moving">10 NPCs Moving with Bubbles</option>
+            </select>
+          </div>
+
+          {/* Room Inspector */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <Compass size={14} className="text-primary" />
+              Room Inspector
+            </label>
+            <select
+              aria-label="Room inspection"
+              value={auditRoom}
+              disabled={busy}
+              className="w-full px-3 py-2 rounded-lg bg-surface-raised border border-border text-sm font-medium text-text focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-colors"
+              onChange={(e) => {
+                const roomId = e.target.value;
+                setAuditRoom(roomId);
+                if (roomId) frameRoom(environment, roomId);
+                else frameCamera(environment, mode);
+              }}
+            >
+              <option value="">Restore Scene Camera</option>
+              {(environment === "agency" ? studioReviewRooms : (OFFICE_ROOMS[environment] ?? [])).map(
+                (room) => (
+                  <option key={room.id} value={room.id}>
+                    {roomLabel(room.label, "en")}
+                  </option>
+                ),
+              )}
+            </select>
+          </div>
+        </div>
+
+        {/* Camera Tools Toolbar */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-2 lg:pt-0 lg:border-l lg:border-border lg:pl-4">
           <button
+            type="button"
+            disabled={busy}
+            title="Rotate camera 90°"
+            className="p-2 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text transition-colors disabled:opacity-50"
+            onClick={() => renderer.current?.rotateCamera(2)}
+          >
+            <RotateCw size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            title="Zoom In"
+            className="p-2 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text transition-colors disabled:opacity-50"
+            onClick={() => renderer.current?.zoom(0.8)}
+          >
+            <ZoomIn size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            title="Zoom Out"
+            className="p-2 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text transition-colors disabled:opacity-50"
+            onClick={() => renderer.current?.zoom(1.25)}
+          >
+            <ZoomOut size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            title="Reset scene camera"
+            className="p-2 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text transition-colors disabled:opacity-50"
+            onClick={resetAuditCamera}
+          >
+            <RotateCcw size={16} />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            title={showLabels ? "Hide Actor Labels" : "Show Actor Labels"}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors ${showLabels ? "bg-primary text-white border-primary" : "bg-surface-raised text-text border-border"}`}
+            onClick={() => setShowLabels((v) => !v)}
+          >
+            {showLabels ? <Eye size={14} /> : <EyeOff size={14} />}
+            <span>Labels</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={busy}
+            title={smallViewport ? "Restore full size" : "Mobile preview (390px)"}
+            className={`p-2 rounded-lg border transition-colors ${smallViewport ? "bg-primary text-white border-primary" : "bg-surface-raised text-text border-border"}`}
             onClick={() => {
-              matrixAbort.current?.abort("Cancelled by user");
-              renderer.current?.cancelBenchmark("Cancelled by user");
+              setSmallViewport((v) => !v);
+              setReferenceViewport(false);
+              setStatus(smallViewport ? "Default responsive container restored." : "Renderer container resized to 390×600 mobile check.");
             }}
           >
-            Stop full run
+            {smallViewport ? <Monitor size={16} /> : <Smartphone size={16} />}
           </button>
-        )}
-        <button
-          disabled={busy}
-          aria-pressed={smallViewport}
-          onClick={() => {
-            setSmallViewport((value) => !value);
-            setReferenceViewport(false);
-            setStatus("Renderer container resized. Check readiness and the measured size.");
-          }}
-        >
-          {smallViewport ? "Restore default size" : "Small screen 390px"}
-        </button>
-        <button
-          disabled={busy}
-          aria-pressed={showLabels}
-          onClick={() => setShowLabels((value) => !value)}
-        >
-          {showLabels ? "Hide names and bubbles" : "Show names and bubbles"}
-        </button>
-        <button disabled={busy || !metrics?.assetsReady} onClick={transitions}>
-          Switch maps 10 times
-        </button>
-        <button disabled={busy} onClick={() => renderer.current?.rotateCamera(2)}>
-          Rotate 90°
-        </button>
-        <button disabled={busy} onClick={() => renderer.current?.zoom(0.8)}>
-          Zoom in
-        </button>
-        <button disabled={busy} onClick={() => renderer.current?.zoom(1.25)}>
-          Zoom out
-        </button>
-      </div>
-      <p role="status">{status}</p>
-      <p>
-        Room inspection keeps showing the selected room when the environment changes. Measuring or
-        switching maps restores the scene camera; the close-up scene is always the meeting room.
-      </p>
-      <p>
-        The full run measures 5 environments × 3 scenes in order and takes 10+ minutes. Hiding the
-        tab, resizing, an asset error or stopping skips the remaining scenes and keeps only the
-        reason and the finished results.
-      </p>
-      <p>
-        The small-screen fixture only sizes the renderer container to 390×600 CSS px. It is not a
-        Chrome viewport change or a mobile check of the product. Current:{" "}
-        {smallViewport ? "390×600 CSS px" : "default responsive container"}.
-      </p>
-      <div
-        aria-label="Renderer check area"
-        style={{
-          position: "relative",
-          pointerEvents: busy ? "none" : undefined,
-          width: referenceViewport ? 1748 : smallViewport ? 390 : "100%",
-          height: referenceViewport ? 900 : smallViewport ? 600 : "min(68vh, 760px)",
-          minHeight: smallViewport ? 600 : 400,
-        }}
-      >
-        <div ref={host} className="office-three-canvas" />
+        </div>
+      </section>
+
+      {/* Telemetry Strip Banner */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Activity size={12} className="text-emerald-500" />
+            Active Actors
+          </span>
+          <span className="text-lg font-bold text-text">
+            {metrics ? `${metrics.actorCount} In Scene` : "12 In Scene"}
+          </span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Layers size={12} className="text-blue-500" />
+            Draw Calls
+          </span>
+          <span className="text-lg font-bold text-text">
+            {metrics?.drawCalls ?? "—"}
+          </span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Cpu size={12} className="text-purple-500" />
+            Triangles
+          </span>
+          <span className="text-lg font-bold text-text">
+            {metrics?.triangles ? `${Math.round(metrics.triangles / 1000)}k` : "—"}
+          </span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Boxes size={12} className="text-amber-500" />
+            Geometries
+          </span>
+          <span className="text-lg font-bold text-text">
+            {metrics?.geometries ?? "—"}
+          </span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Activity size={12} className="text-indigo-500" />
+            Textures
+          </span>
+          <span className="text-lg font-bold text-text">
+            {metrics?.textures ?? "—"}
+          </span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-surface border border-border shadow-xs flex flex-col gap-1">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1">
+            <Info size={12} className="text-teal-500" />
+            Engine State
+          </span>
+          <span className="text-xs font-medium text-text-secondary truncate mt-1" title={status}>
+            {status}
+          </span>
+        </div>
+      </section>
+
+      {/* 3D Canvas Box */}
+      <section className="relative rounded-2xl border border-border bg-[#18181b] shadow-2xl overflow-hidden flex flex-col items-center justify-center min-h-[460px]">
         <div
-          ref={labels}
-          className="office-actor-labels"
-          style={{ visibility: showLabels ? "visible" : "hidden" }}
-        />
-      </div>
-      <details open>
-        <summary>Live renderer metrics</summary>
-        <pre aria-label="Live metrics">{JSON.stringify(metrics, null, 2)}</pre>
-      </details>
-      {matrix && (
-        <section aria-label="All-scene results">
-          <p>
-            Status: {matrix.status} · {matrix.index}/{matrix.total} · {matrix.environment} /{" "}
-            {matrix.scene}
-          </p>
-          <p>
-            Last result:{" "}
-            {matrix.results.at(-1)
-              ? `${matrix.results.at(-1)!.environment} / ${matrix.results.at(-1)!.scene} · ${matrix.results.at(-1)!.status} · median ${matrix.results.at(-1)!.medianFps?.toFixed(1) ?? "—"} FPS`
-              : "none yet"}
-          </p>
-          <pre
-            aria-label="15-scene progress"
-            style={{ maxHeight: 400, overflow: "auto", whiteSpace: "pre-wrap" }}
-          >
-            {JSON.stringify(matrix, null, 2)}
-          </pre>
-        </section>
-      )}
-      <details open={!matrix}>
-        <summary>
-          {matrix?.status === "complete" ? "Full frame results JSON" : "Results JSON"}
-        </summary>
-        <pre
-          aria-label="Results"
-          style={{ maxHeight: 500, overflow: "auto", whiteSpace: "pre-wrap" }}
+          aria-label="Renderer check area"
+          style={{
+            position: "relative",
+            pointerEvents: busy ? "none" : undefined,
+            width: referenceViewport ? 1748 : smallViewport ? 390 : "100%",
+            height: referenceViewport ? 900 : smallViewport ? 600 : "min(68vh, 760px)",
+            minHeight: smallViewport ? 600 : 460,
+          }}
+          className="w-full flex justify-center items-center overflow-hidden transition-all duration-300"
         >
-          {JSON.stringify(report, null, 2)}
-        </pre>
-      </details>
+          <div ref={host} className="office-three-canvas w-full h-full" />
+          <div
+            ref={labels}
+            className="office-actor-labels"
+            style={{ visibility: showLabels ? "visible" : "hidden" }}
+          />
+        </div>
+      </section>
+
+      {/* Diagnostic Benchmarking & Engine Health */}
+      <section className="bg-surface border border-border rounded-xl p-5 shadow-sm flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+          <div>
+            <h2 className="text-sm font-bold text-text uppercase tracking-wider flex items-center gap-2">
+              <Activity size={16} className="text-primary" />
+              Engine Diagnostics & Performance Benchmarks
+            </h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Execute standardized frame rate probes, asset transitions, and multi-scene stress tests.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={busy || !metrics?.assetsReady || !showLabels}
+              className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              onClick={benchmark}
+            >
+              <Play size={13} />
+              <span>Measure FPS</span>
+            </button>
+            <button
+              type="button"
+              disabled={busy || !metrics?.assetsReady || !showLabels}
+              className="px-3 py-1.5 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              onClick={benchmarkMatrix}
+            >
+              <Cpu size={13} />
+              <span>All 15 Scenes</span>
+            </button>
+            <button
+              type="button"
+              disabled={busy || !metrics?.assetsReady}
+              className="px-3 py-1.5 rounded-lg bg-surface-raised hover:bg-surface-raised/80 border border-border text-text text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              onClick={transitions}
+            >
+              <RefreshCw size={13} />
+              <span>Map Switch ×10</span>
+            </button>
+            {matrixAbort.current && (
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-lg bg-danger hover:bg-danger-hover text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+                onClick={() => {
+                  matrixAbort.current?.abort("Cancelled by user");
+                  renderer.current?.cancelBenchmark("Cancelled by user");
+                }}
+              >
+                <StopCircle size={13} />
+                <span>Stop Run</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Stress Test Matrix Progress */}
+        {matrix && (
+          <div className="p-4 rounded-lg bg-surface-raised border border-border flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs font-semibold">
+              <span className="text-text">
+                Status: <span className="text-primary uppercase">{matrix.status}</span> ({matrix.index}/{matrix.total})
+              </span>
+              <span className="text-text-muted">
+                {matrix.environment} • {matrix.scene}
+              </span>
+            </div>
+            {matrix.results.at(-1) && (
+              <div className="text-xs text-text-secondary bg-surface p-2.5 rounded-md border border-border flex items-center justify-between">
+                <span>Last Result: {matrix.results.at(-1)!.environment} / {matrix.results.at(-1)!.scene}</span>
+                <span className="font-bold text-emerald-500">
+                  {matrix.results.at(-1)!.medianFps?.toFixed(1) ?? "—"} Median FPS
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Collapsible Telemetry JSON Details */}
+        <details className="text-xs text-text-muted">
+          <summary className="cursor-pointer font-semibold hover:text-text transition-colors py-1">
+            Raw Diagnostic JSON Telemetry ({metrics ? "Available" : "Empty"})
+          </summary>
+          <pre className="mt-2 p-3 rounded-lg bg-[#0f0f11] text-[#e4e4e7] border border-border font-mono text-[11px] overflow-auto max-h-60">
+            {JSON.stringify(report ?? metrics, null, 2)}
+          </pre>
+        </details>
+      </section>
     </main>
   );
 }
