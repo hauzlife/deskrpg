@@ -57,8 +57,6 @@ export default function ArtifactsModal({
   debounceMs = ARTIFACTS_EVENT_DEBOUNCE_MS,
 }: ArtifactsModalProps) {
   const t = useT();
-  const api = useMemo(() => createArtifactsApi(channelId), [channelId]);
-  const cardAttachments = useCardAttachments(channelId);
   const [filter, setFilter] = useState<ArtifactFilter>({});
   const [items, setItems] = useState<ArtifactSummary[]>([]);
   const [cursor, setCursor] = useState("");
@@ -69,6 +67,14 @@ export default function ArtifactsModal({
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(initialArtifactId);
   const [viewerReload, setViewerReload] = useState(0);
+
+  const selectedArtifact = items.find((a) => a.id === selectedId);
+  const activeChannelId =
+    channelId === "all"
+      ? (selectedArtifact as { _channelId?: string })?._channelId || (channels && channels[0]?.id) || ""
+      : channelId;
+  const api = useMemo(() => createArtifactsApi(activeChannelId), [activeChannelId]);
+  const cardAttachments = useCardAttachments(activeChannelId);
   const sequence = useRef(0);
   const viewerRef = useRef<ArtifactViewerHandle | null>(null);
 
@@ -87,6 +93,43 @@ export default function ArtifactsModal({
     async (after?: string) => {
       const mine = ++sequence.current;
       setLoading(true);
+      if (channelId === "all" && channels && channels.length > 0) {
+        try {
+          const results = await Promise.all(
+            channels.map(async (ch) => {
+              try {
+                const chApi = createArtifactsApi(ch.id);
+                const page = await chApi.list({ ...filter, taskId: initialTaskId ?? undefined });
+                return (page.artifacts || []).map((art) => ({
+                  ...art,
+                  _channelId: ch.id,
+                  _channelName: ch.name,
+                }));
+              } catch {
+                return [];
+              }
+            }),
+          );
+          if (mine !== sequence.current) return;
+          const merged = results.flat().sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0));
+          setItems(merged);
+          setCursor("");
+          setHasMore(false);
+          setError(null);
+          gateBlocker.clear();
+          setChecklistOpen(false);
+        } catch (err) {
+          if (mine !== sequence.current) return;
+          setError(
+            err instanceof ArtifactsApiError
+              ? err
+              : new ArtifactsApiError(0, "unknown", err instanceof Error ? err.message : String(err)),
+          );
+        } finally {
+          if (mine === sequence.current) setLoading(false);
+        }
+        return;
+      }
       try {
         const page = await api.list({ ...filter, taskId: initialTaskId ?? undefined }, after);
         if (mine !== sequence.current) return;
@@ -186,6 +229,9 @@ export default function ArtifactsModal({
                 onChange={(e) => onSelectChannel(e.target.value)}
                 className="bg-transparent text-text font-semibold focus:outline-none cursor-pointer text-xs"
               >
+                <option value="all" className="bg-bg text-text">
+                  {t("common.all") || "All Offices"}
+                </option>
                 {channels.map((ch) => (
                   <option key={ch.id} value={ch.id} className="bg-bg text-text">
                     {ch.name}

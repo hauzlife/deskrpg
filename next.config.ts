@@ -34,8 +34,15 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
-  // Loopback-only second origin lets local QA use two independent login sessions.
-  allowedDevOrigins: ["127.0.0.1"],
+  // Loopback and local domain origins for local QA and dev access.
+  allowedDevOrigins: [
+    "127.0.0.1",
+    "localhost",
+    "local.office",
+    "office.local",
+    "local.deskrpg",
+    "deskrpg.local",
+  ],
   serverExternalPackages: ["ssh2"],
   experimental: {
     serverActions: {

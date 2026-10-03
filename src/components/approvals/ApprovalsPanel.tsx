@@ -74,11 +74,13 @@ export default function ApprovalsPanel({
   }, [loadApprovals]);
 
   const loadDetail = useCallback(
-    async (id: string) => {
+    async (id: string, overrideChannelId?: string) => {
       setSelectedApprovalId(id);
       setLoadingDetail(true);
       try {
-        const data = await fetchApprovalDetail(channelId, id);
+        const item = approvals.find((a) => a.id === id);
+        const targetChannel = overrideChannelId || item?.channelId || channelId;
+        const data = await fetchApprovalDetail(targetChannel, id);
         setDetail(data.approval);
       } catch {
         setDetail(null);
@@ -86,7 +88,7 @@ export default function ApprovalsPanel({
         setLoadingDetail(false);
       }
     },
-    [channelId],
+    [channelId, approvals],
   );
 
   const handleDecision = async (
@@ -95,11 +97,13 @@ export default function ApprovalsPanel({
   ) => {
     setActionBusyId(approvalId);
     try {
+      const item = approvals.find((a) => a.id === approvalId);
+      const targetChannel = item?.channelId || channelId;
       const note = decisionNotes[approvalId] || "";
-      await submitApprovalDecision(channelId, approvalId, decision, note);
+      await submitApprovalDecision(targetChannel, approvalId, decision, note);
       await loadApprovals();
       if (selectedApprovalId === approvalId) {
-        await loadDetail(approvalId);
+        await loadDetail(approvalId, targetChannel);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Decision failed");

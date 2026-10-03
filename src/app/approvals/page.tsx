@@ -43,7 +43,7 @@ function ApprovalsPageInner() {
 
   return (
     <div className="theme-web workspace-page p-4 flex flex-col flex-1 h-[calc(100vh-2rem)]">
-      {channels.length > 1 && (
+      {channels.length > 0 && (
         <div className="mb-3 flex items-center gap-2">
           <label className="text-xs font-semibold text-text-dim">Office:</label>
           <select
@@ -51,6 +51,9 @@ function ApprovalsPageInner() {
             onChange={(e) => setSelectedChannelId(e.target.value)}
             className="rounded border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus:border-primary focus:outline-none"
           >
+            <option value="all">
+              {t("common.all") || "All Offices"}
+            </option>
             {channels.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

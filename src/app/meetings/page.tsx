@@ -61,6 +61,33 @@ function MeetingsPageInner() {
       return;
     }
     let alive = true;
+    if (selectedChannelId === "all") {
+      Promise.all(
+        channels.map(async (ch) => {
+          try {
+            const api = createKanbanApi(ch.id);
+            const data = await api.projects();
+            return Array.isArray(data?.projects) ? data.projects : [];
+          } catch {
+            return [];
+          }
+        }),
+      ).then((res) => {
+        if (!alive) return;
+        const seen = new Set<string>();
+        const merged: ProjectOption[] = [];
+        for (const p of res.flat()) {
+          if (!seen.has(p.boardSlug)) {
+            seen.add(p.boardSlug);
+            merged.push(p);
+          }
+        }
+        setProjects(merged);
+      });
+      return () => {
+        alive = false;
+      };
+    }
     const api = createKanbanApi(selectedChannelId);
     api
       .projects()
@@ -74,7 +101,7 @@ function MeetingsPageInner() {
     return () => {
       alive = false;
     };
-  }, [selectedChannelId]);
+  }, [selectedChannelId, channels]);
 
   // Fetch tasks for calendar display
   const loadTasks = useCallback(async () => {
@@ -84,15 +111,33 @@ function MeetingsPageInner() {
     }
     setLoadingTasks(true);
     try {
-      const api = createKanbanApi(selectedChannelId, undefined, selectedBoard ?? undefined);
-      const res = await api.board(true);
-      setTasks(flattenTasks(orderColumns(res.columns, true)));
+      if (selectedChannelId === "all") {
+        const results = await Promise.all(
+          channels.map(async (ch) => {
+            try {
+              const api = createKanbanApi(ch.id, undefined, selectedBoard ?? undefined);
+              const res = await api.board(true);
+              return flattenTasks(orderColumns(res.columns, true)).map((t) => ({
+                ...t,
+                _channelId: ch.id,
+              }));
+            } catch {
+              return [];
+            }
+          }),
+        );
+        setTasks(results.flat());
+      } else {
+        const api = createKanbanApi(selectedChannelId, undefined, selectedBoard ?? undefined);
+        const res = await api.board(true);
+        setTasks(flattenTasks(orderColumns(res.columns, true)));
+      }
     } catch {
       setTasks([]);
     } finally {
       setLoadingTasks(false);
     }
-  }, [selectedChannelId, selectedBoard]);
+  }, [selectedChannelId, selectedBoard, channels]);
 
   useEffect(() => {
     void loadTasks();
@@ -140,6 +185,9 @@ function MeetingsPageInner() {
                   onChange={(e) => setSelectedChannelId(e.target.value)}
                   className="bg-transparent text-text font-semibold focus:outline-none cursor-pointer text-xs"
                 >
+                  <option value="all" className="bg-bg text-text">
+                    {t("common.all") || "All Offices"}
+                  </option>
                   {channels.map((ch) => (
                     <option key={ch.id} value={ch.id} className="bg-bg text-text">
                       {ch.name}

@@ -15,11 +15,11 @@
  * need a new channel.
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { approvalTargets, approvals, db, nowForDb } from "@/db";
+import { approvalTargets, approvals, channelMembers, channels, db, nowForDb } from "@/db";
 import {
   approvalBoardSlug,
   approvalTargetIds,
@@ -76,14 +76,20 @@ export async function decideApproval(req: NextRequest, channelId: string, approv
       id: approvals.id,
       status: approvals.status,
       payloadJson: approvals.payloadJson,
+      channelId: approvals.channelId,
     })
     .from(approvals)
-    .where(and(eq(approvals.id, approvalId), eq(approvals.channelId, channelId)))
+    .where(
+      channelId === "all"
+        ? eq(approvals.id, approvalId)
+        : and(eq(approvals.id, approvalId), eq(approvals.channelId, channelId)),
+    )
     .limit(1);
 
+  const effectiveChannelId = row?.channelId || channelId;
   const resolved = await resolveKanbanChannelContext({
     userId,
-    channelId,
+    channelId: effectiveChannelId,
     // An old row (no payload) belongs to the channel's default board. The slug still goes
     // through the membership check (404) again.
     ...(row ? { boardSlug: approvalBoardSlug(row.payloadJson) ?? undefined } : {}),
@@ -168,7 +174,7 @@ export async function decideApproval(req: NextRequest, channelId: string, approv
   // (about 5 minutes on staging). Even if this fails, the approval is still a success.
   if (plan.unblock.length > failed.length) {
     await dispatchOnce(ctx);
-    schedulePollNow(channelId);
+    schedulePollNow(effectiveChannelId);
   }
 
   // Comments also go to the same `ctx.boardSlug` — because context was resolved against the
@@ -186,7 +192,7 @@ export async function decideApproval(req: NextRequest, channelId: string, approv
   // Have the room's approval-request line report the outcome — otherwise "open approval"
   // would still show even after a decision is made.
   await rewriteRoomNotices({
-    channelId,
+    channelId: effectiveChannelId,
     needle: approvalId,
     update: (notice) =>
       notice.kind === "approval_requested" && notice.approvalId === approvalId
@@ -214,9 +220,6 @@ export async function listApprovals(req: NextRequest, channelId: string) {
   const userId = getUserId(req);
   if (!userId) return cronError(401, "unauthorized", "unauthorized");
 
-  const memberAccess = await requireChannelMember(channelId, userId);
-  if (!memberAccess.ok) return memberAccess.response;
-
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const limitParam = parseInt(url.searchParams.get("limit") || "50", 10);
@@ -224,7 +227,34 @@ export async function listApprovals(req: NextRequest, channelId: string) {
   const offsetParam = parseInt(url.searchParams.get("offset") || "0", 10);
   const offset = Math.max(Number.isNaN(offsetParam) ? 0 : offsetParam, 0);
 
-  const conditions = [eq(approvals.channelId, channelId)];
+  let conditions = [];
+
+  if (channelId === "all") {
+    const ownedChannels = await db
+      .select({ id: channels.id })
+      .from(channels)
+      .where(eq(channels.ownerId, userId));
+    const memberOfChannels = await db
+      .select({ channelId: channelMembers.channelId })
+      .from(channelMembers)
+      .where(eq(channelMembers.userId, userId));
+    const allowedIds = Array.from(
+      new Set([
+        ...ownedChannels.map((c) => c.id),
+        ...memberOfChannels.map((m) => m.channelId),
+      ]),
+    );
+
+    if (allowedIds.length === 0) {
+      return NextResponse.json({ ok: true, approvals: [], total: 0 });
+    }
+    conditions.push(inArray(approvals.channelId, allowedIds));
+  } else {
+    const memberAccess = await requireChannelMember(channelId, userId);
+    if (!memberAccess.ok) return memberAccess.response;
+    conditions.push(eq(approvals.channelId, channelId));
+  }
+
   if (status && status !== "all") {
     conditions.push(eq(approvals.status, status));
   }
@@ -276,16 +306,21 @@ export async function getApprovalDetail(req: NextRequest, channelId: string, app
   const userId = getUserId(req);
   if (!userId) return cronError(401, "unauthorized", "unauthorized");
 
-  const memberAccess = await requireChannelMember(channelId, userId);
-  if (!memberAccess.ok) return memberAccess.response;
-
   const [row] = await db
     .select()
     .from(approvals)
-    .where(and(eq(approvals.id, approvalId), eq(approvals.channelId, channelId)))
+    .where(
+      channelId === "all"
+        ? eq(approvals.id, approvalId)
+        : and(eq(approvals.id, approvalId), eq(approvals.channelId, channelId)),
+    )
     .limit(1);
 
   if (!row) return cronError(404, "approval_not_found", "approval not found");
+
+  const effectiveChannelId = row.channelId;
+  const memberAccess = await requireChannelMember(effectiveChannelId, userId);
+  if (!memberAccess.ok) return memberAccess.response;
 
   const targetRows = await db
     .select({ taskId: approvalTargets.taskId, decision: approvalTargets.decision })
@@ -294,7 +329,7 @@ export async function getApprovalDetail(req: NextRequest, channelId: string, app
 
   const resolved = await resolveKanbanChannelContext({
     userId,
-    channelId,
+    channelId: effectiveChannelId,
     ...(row.payloadJson ? { boardSlug: approvalBoardSlug(row.payloadJson) ?? undefined } : {}),
   });
 

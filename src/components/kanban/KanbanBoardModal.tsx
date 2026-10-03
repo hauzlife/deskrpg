@@ -293,6 +293,34 @@ export default function KanbanBoardModal({
   // a missing list is no reason to block kanban.
   useEffect(() => {
     let alive = true;
+    if (channelId === "all") {
+      if (!channels || channels.length === 0) return;
+      Promise.all(
+        channels.map(async (ch) => {
+          try {
+            const data = await createKanbanApi(ch.id).projects();
+            return Array.isArray(data?.projects) ? data.projects : [];
+          } catch {
+            return [];
+          }
+        }),
+      ).then((res) => {
+        if (!alive) return;
+        const seen = new Set<string>();
+        const merged: ProjectOption[] = [];
+        for (const p of res.flat()) {
+          if (!seen.has(p.boardSlug)) {
+            seen.add(p.boardSlug);
+            merged.push(p);
+          }
+        }
+        setProjects(merged);
+        setCanManageProjects(false);
+      });
+      return () => {
+        alive = false;
+      };
+    }
     const listApi = createKanbanApi(channelId);
     void listApi
       .projects()
@@ -308,7 +336,7 @@ export default function KanbanBoardModal({
     return () => {
       alive = false;
     };
-  }, [channelId, projectsTick]);
+  }, [channelId, projectsTick, channels]);
 
   // Failures are thrown back to the picker, which explains them next to the button.
   const archiveProject = useCallback(
@@ -338,6 +366,81 @@ export default function KanbanBoardModal({
     const sequence = ++reloadSequence.current;
     const current = () => mounted.current && sequence === reloadSequence.current;
     const operation = (async (): Promise<ReloadResult> => {
+      if (channelId === "all" && channels && channels.length > 0) {
+        try {
+          const results = await Promise.all(
+            channels.map(async (ch) => {
+              try {
+                const chApi = createKanbanApi(ch.id, undefined, selectedBoard ?? undefined);
+                const data = await chApi.board(includeArchived);
+                return { channel: ch, data };
+              } catch {
+                return null;
+              }
+            }),
+          );
+          if (!current()) return { kind: "superseded" };
+          const valid = results.filter((r): r is NonNullable<typeof r> => r !== null);
+          const columnMap = new Map<string, KanbanTask[]>();
+          const tenantsSet = new Set<string>();
+          const assigneesSet = new Set<string>();
+          const npcsMap = new Map<string, (typeof valid)[0]["data"]["npcs"][number]>();
+          let latestEventId: string | null = null;
+          let latestNow: BoardResponse["now"] = 0;
+
+          for (const { channel: ch, data } of valid) {
+            if (!data?.columns) continue;
+            latestEventId = data.latest_event_id || latestEventId;
+            latestNow = data.now || latestNow;
+            if (Array.isArray(data.tenants)) {
+              for (const t of data.tenants) tenantsSet.add(t);
+            }
+            if (Array.isArray(data.assignees)) {
+              for (const a of data.assignees) assigneesSet.add(a);
+            }
+            if (Array.isArray(data.npcs)) {
+              for (const n of data.npcs) npcsMap.set(n.npcId, n);
+            }
+            for (const col of data.columns) {
+              if (!columnMap.has(col.name)) {
+                columnMap.set(col.name, []);
+              }
+              const tagged = (col.tasks || []).map((task) => ({
+                ...task,
+                _channelId: ch.id,
+                _channelName: ch.name,
+              }));
+              columnMap.get(col.name)!.push(...tagged);
+            }
+          }
+
+          const mergedBoard: BoardResponse = {
+            columns: Array.from(columnMap.entries()).map(([name, tasks]) => ({
+              name,
+              tasks,
+            })),
+            tenants: Array.from(tenantsSet),
+            assignees: Array.from(assigneesSet),
+            latest_event_id: latestEventId,
+            now: latestNow,
+            npcs: Array.from(npcsMap.values()),
+          };
+          setBoard(mergedBoard);
+          setMove((move) =>
+            move.phase === "error" && sequence > move.shownAt ? { phase: "idle" } : move,
+          );
+          setBoardChannelId("all");
+          setBlocker(null);
+          setChecklist(null);
+          return { kind: "applied", board: mergedBoard };
+        } catch {
+          if (!current()) return { kind: "superseded" };
+          return { kind: "failed" };
+        } finally {
+          if (current()) setLoading(false);
+        }
+      }
+
       let nextStatus: AutomationStatus | null = null;
       try {
         nextStatus = await api.status();
@@ -377,7 +480,7 @@ export default function KanbanBoardModal({
     })();
     latestReloadRef.current = operation;
     return operation;
-  }, [api, channelId, includeArchived]);
+  }, [api, channelId, includeArchived, channels, selectedBoard]);
 
   const reconcileReload = useCallback(
     async (result: ReloadResult): Promise<ReloadResult> => {
@@ -919,6 +1022,9 @@ export default function KanbanBoardModal({
                   onChange={(e) => onSelectChannel(e.target.value)}
                   className="bg-transparent text-text font-semibold focus:outline-none cursor-pointer text-xs"
                 >
+                  <option value="all" className="bg-bg text-text">
+                    {t("common.all") || "All Offices"}
+                  </option>
                   {channels.map((ch) => (
                     <option key={ch.id} value={ch.id} className="bg-bg text-text">
                       {ch.name}
