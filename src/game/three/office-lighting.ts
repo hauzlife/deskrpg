@@ -55,6 +55,6 @@ export function applyOfficeShadowFilter(
   scene.traverse((object) => {
     if (!(object instanceof Mesh)) return;
     for (const material of Array.isArray(object.material) ? object.material : [object.material])
-      material.needsUpdate = true;
+      if (material) material.needsUpdate = true;
   });
 }

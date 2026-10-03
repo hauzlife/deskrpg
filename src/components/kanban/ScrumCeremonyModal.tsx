@@ -11,7 +11,7 @@ import {
   History,
   CheckCircle2,
 } from "lucide-react";
-import type { ScrumCeremonyType } from "@/lib/scrum-lifecycle";
+import type { ScrumCeremonyType } from "@/lib/scrum-types";
 import { useT } from "@/lib/i18n";
 
 interface ScrumCeremonyModalProps {

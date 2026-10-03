@@ -23,12 +23,8 @@ import {
 import { appendRoomMessage } from "./chat-rooms";
 import type { MeetingOutcome, MeetingFollowUp } from "./meeting-outcome";
 
-export type ScrumCeremonyType =
-  | "sprint_planning"
-  | "daily_standup"
-  | "mid_sprint_check"
-  | "sprint_review"
-  | "sprint_retrospective";
+import type { ScrumCeremonyType } from "./scrum-types";
+export type { ScrumCeremonyType };
 
 export interface CeremonyParticipant {
   id: string;

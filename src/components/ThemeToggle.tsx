@@ -26,10 +26,14 @@ function subscribeTheme(callback: () => void) {
 
 function getThemeSnapshot(): "light" | "dark" {
   if (typeof document === "undefined") return "light";
-  return document.documentElement.classList.contains("dark") ||
-    localStorage.getItem("deskrpg_theme") === "dark"
-    ? "dark"
-    : "light";
+  try {
+    return document.documentElement.classList.contains("dark") ||
+      localStorage.getItem("deskrpg_theme") === "dark"
+      ? "dark"
+      : "light";
+  } catch {
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  }
 }
 
 function getServerSnapshot(): "light" | "dark" {

@@ -14,7 +14,7 @@ import { buildAttentionInbox, type AttentionInboxInput } from "@/lib/attention-i
 import { approvalBoardSlug, approvalTargetsByApproval } from "@/lib/approvals";
 import { parseRoomNotice } from "@/lib/chat-rooms-policy";
 import { visibleToSql } from "@/lib/room-audience";
-import { pluginFailureResponse } from "@/lib/cron-access";
+import { pluginFailureResponse, requireChannelMember } from "@/lib/cron-access";
 import { getUserId } from "@/lib/internal-rpc";
 import { countNeedsAttention } from "@/lib/needs-attention";
 import { answerNpcQuestion, listUserQuestions } from "@/lib/npc-questions";
@@ -136,9 +136,17 @@ const MAX_DECISION_LOOKUPS = 20;
 
 /** GET — only what needs a human answer. */
 export async function getAttentionInbox(req: NextRequest, channelId: string) {
-  const resolved = await resolveKanbanChannelContext({ userId: getUserId(req), channelId });
-  if (!resolved.ok) return resolved.response;
-  const ctx = resolved.ctx;
+  const userId = getUserId(req);
+  if (!userId) {
+    return cronError(401, "login_required", "login required");
+  }
+
+  const memberAccess = await requireChannelMember(channelId, userId);
+  if (!memberAccess.ok) return memberAccess.response;
+
+  const resolved = await resolveKanbanChannelContext({ userId, channelId });
+  const ctx = resolved.ok ? resolved.ctx : null;
+  const isGatewayOwner = ctx ? ctx.isGatewayOwner : memberAccess.channel.ownerId === userId;
 
   const pending = await db
     .select({
@@ -152,53 +160,41 @@ export async function getAttentionInbox(req: NextRequest, channelId: string) {
     .where(and(eq(approvals.channelId, channelId), eq(approvals.status, "pending")));
   const targets = await approvalTargetsByApproval(pending.map((a) => a.id));
 
-  // Reading only the default board would **drop pending-approval cards from other boards out of
-  // the row**. The boards pointed at by pending approvals are also read. If one board fails,
-  // only that board is skipped — one board's failure blanking the whole screen would leave the
-  // user seeing nothing.
-  const slugs = new Set<string>([ctx.boardSlug]);
-  for (const a of pending) {
-    const slug = approvalBoardSlug(a.payloadJson);
-    if (slug) slugs.add(slug);
-  }
   const cardsBySlug: AttentionInboxInput["cards"][number][] = [];
-  let anyBoardOk = false;
-  for (const slug of slugs) {
-    const board = await ctx.client.kanban.getBoard(slug, {});
-    if (!board.ok) {
-      // If the default board fails, the screen must show why — that one isn't hidden either.
-      if (slug === ctx.boardSlug) return pluginFailureResponse(board);
-      continue;
+  if (ctx) {
+    const slugs = new Set<string>([ctx.boardSlug]);
+    for (const a of pending) {
+      const slug = approvalBoardSlug(a.payloadJson);
+      if (slug) slugs.add(slug);
     }
-    anyBoardOk = true;
-    const waiting: { card: AttentionInboxInput["cards"][number]; reviewer: string | null }[] = [];
-    for (const column of board.data.columns)
-      for (const task of column.tasks) {
-        const ms = taskTimeMs(task.created_at);
-        const card = {
-          id: task.id,
-          status: task.status,
-          title: task.title,
-          at: ms === null ? null : new Date(ms).toISOString(),
-          failures: task.consecutive_failures,
-          assignee: task.assignee ?? null,
-        };
-        cardsBySlug.push(card);
-        if (task.review?.state === "human_required")
-          waiting.push({ card, reviewer: task.review.policy.reviewer_profile });
-      }
-    // A card waiting for a person's decision has no assignee; its detail says who did the work (D08 ✋).
-    // Only these cards are read — a failed read just leaves the card without a name.
-    await Promise.all(
-      waiting.slice(0, MAX_DECISION_LOOKUPS).map(async ({ card, reviewer }) => {
-        const detail = await ctx.client.kanban.getTask(slug, card.id).catch(() => null);
-        if (detail?.ok)
-          Object.assign(card, { implementer: reviewImplementer(detail.data, reviewer) });
-      }),
-    );
+    for (const slug of slugs) {
+      const board = await ctx.client.kanban.getBoard(slug, {}).catch(() => null);
+      if (!board || !board.ok) continue;
+      const waiting: { card: AttentionInboxInput["cards"][number]; reviewer: string | null }[] = [];
+      for (const column of board.data.columns)
+        for (const task of column.tasks) {
+          const ms = taskTimeMs(task.created_at);
+          const card = {
+            id: task.id,
+            status: task.status,
+            title: task.title,
+            at: ms === null ? null : new Date(ms).toISOString(),
+            failures: task.consecutive_failures,
+            assignee: task.assignee ?? null,
+          };
+          cardsBySlug.push(card);
+          if (task.review?.state === "human_required")
+            waiting.push({ card, reviewer: task.review.policy.reviewer_profile });
+        }
+      await Promise.all(
+        waiting.slice(0, MAX_DECISION_LOOKUPS).map(async ({ card, reviewer }) => {
+          const detail = await ctx.client.kanban.getTask(slug, card.id).catch(() => null);
+          if (detail?.ok)
+            Object.assign(card, { implementer: reviewImplementer(detail.data, reviewer) });
+        }),
+      );
+    }
   }
-  if (!anyBoardOk)
-    return NextResponse.json({ rows: [], counts: countNeedsAttention([], new Set()) });
 
   // Card timestamps arrive as **epoch seconds** — calling `Date.parse` on them yields NaN,
   // silently losing the elapsed time. That judgment is kept in exactly one place, `taskTimeMs`
@@ -214,9 +210,9 @@ export async function getAttentionInbox(req: NextRequest, channelId: string) {
       taskIds: targets.get(a.id) ?? [],
     })),
     cronFailures: await recentCronFailures(channelId),
-    blockedRuns: await recentBlockedRuns(channelId, ctx.userId, ctx.isGatewayOwner),
+    blockedRuns: await recentBlockedRuns(channelId, userId, isGatewayOwner),
     // A gateway that can't be read only drops its questions — never the whole inbox.
-    questions: await listUserQuestions(channelId, ctx.userId).catch(() => []),
+    questions: await listUserQuestions(channelId, userId).catch(() => []),
   };
 
   const pendingTaskIds = new Set<string>();
