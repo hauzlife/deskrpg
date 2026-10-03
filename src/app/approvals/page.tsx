@@ -51,9 +51,7 @@ function ApprovalsPageInner() {
             onChange={(e) => setSelectedChannelId(e.target.value)}
             className="rounded border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus:border-primary focus:outline-none"
           >
-            <option value="all">
-              {t("common.all") || "All Offices"}
-            </option>
+            <option value="all">{t("common.all") || "All Offices"}</option>
             {channels.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

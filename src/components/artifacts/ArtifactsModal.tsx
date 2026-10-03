@@ -71,7 +71,9 @@ export default function ArtifactsModal({
   const selectedArtifact = items.find((a) => a.id === selectedId);
   const activeChannelId =
     channelId === "all"
-      ? (selectedArtifact as { _channelId?: string })?._channelId || (channels && channels[0]?.id) || ""
+      ? (selectedArtifact as { _channelId?: string })?._channelId ||
+        (channels && channels[0]?.id) ||
+        ""
       : channelId;
   const api = useMemo(() => createArtifactsApi(activeChannelId), [activeChannelId]);
   const cardAttachments = useCardAttachments(activeChannelId);
@@ -123,7 +125,11 @@ export default function ArtifactsModal({
           setError(
             err instanceof ArtifactsApiError
               ? err
-              : new ArtifactsApiError(0, "unknown", err instanceof Error ? err.message : String(err)),
+              : new ArtifactsApiError(
+                  0,
+                  "unknown",
+                  err instanceof Error ? err.message : String(err),
+                ),
           );
         } finally {
           if (mine === sequence.current) setLoading(false);

@@ -49,7 +49,8 @@ export function useWorkspaceChannels() {
         setChannels(list);
         if (list.length > 0) {
           setSelectedChannelIdState((prev) => {
-            const hasMatch = prev && (prev === "all" || list.some((c: { id: string }) => c.id === prev));
+            const hasMatch =
+              prev && (prev === "all" || list.some((c: { id: string }) => c.id === prev));
             const chosen = hasMatch ? prev : list[0].id;
             try {
               window.localStorage.setItem(STORAGE_KEY, chosen);

@@ -239,10 +239,7 @@ export async function listApprovals(req: NextRequest, channelId: string) {
       .from(channelMembers)
       .where(eq(channelMembers.userId, userId));
     const allowedIds = Array.from(
-      new Set([
-        ...ownedChannels.map((c) => c.id),
-        ...memberOfChannels.map((m) => m.channelId),
-      ]),
+      new Set([...ownedChannels.map((c) => c.id), ...memberOfChannels.map((m) => m.channelId)]),
     );
 
     if (allowedIds.length === 0) {
