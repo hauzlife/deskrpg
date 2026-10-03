@@ -41,9 +41,9 @@ export async function generateMetadata(): Promise<Metadata> {
       },
     },
     openGraph: {
-      title: "DeskRPG for Hermes",
+      title: "Rebeltransfer for Hermes",
       description: translateServer(locale, "metadata.openGraphDescription"),
-      siteName: "DeskRPG for Hermes",
+      siteName: "Rebeltransfer for Hermes",
       url: BASE_URL,
       type: "website",
     },

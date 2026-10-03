@@ -25,7 +25,7 @@ export default function NotFound() {
           <DeskRpgMark size={48} />
         </div>
         <span className="text-xs font-bold tracking-widest text-primary uppercase mb-2">
-          DeskRPG Office Security
+          Rebeltransfer Office Security
         </span>
         <h1 className="text-4xl font-extrabold tracking-tight text-text mb-2">404</h1>
         <p className="text-lg font-semibold text-text-secondary mb-1">{ko.heading}</p>

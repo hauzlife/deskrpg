@@ -109,7 +109,7 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
       <header className="commute-header">
         <Link href="/" className="commute-brand">
           <DeskRpgMark size={30} />
-          DeskRPG <span>AI Coworking Space</span>
+          Rebeltransfer <span>AI Coworking Space</span>
         </Link>
       </header>
 
@@ -127,7 +127,7 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
               <Sun size={14} aria-hidden="true" /> {t("auth.morningGreeting")}
             </p>
             <h1>
-              DeskRPG <span>AI Coworking Space</span>
+              Rebeltransfer <span>AI Coworking Space</span>
             </h1>
             <p className="commute-subtitle">{t("auth.heroSubtitle")}</p>
           </div>

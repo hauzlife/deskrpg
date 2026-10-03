@@ -149,10 +149,11 @@ const en: Record<string, string> = {
   "auth.morningGreeting": "A NEW DAY AT YOUR LITTLE OFFICE",
   "auth.morningCaption": "A little world. A brighter workday.",
   "auth.subtitle": "Virtual Office with AI Employees",
-  "metadata.title": "DeskRPG — The Office Where AI Coworkers Work",
+  "metadata.title": "Rebeltransfer — The Office Where AI Coworkers Work",
   "metadata.description":
     "Build your own 3D virtual office and work alongside Hermes AI coworkers. A shared workspace to connect with your team and achieve your goals.",
-  "metadata.openGraphDescription": "DeskRPG for Hermes — Your 3D virtual office with AI coworkers",
+  "metadata.openGraphDescription":
+    "Rebeltransfer for Hermes — Your 3D virtual office with AI coworkers",
   "metadata.keywords":
     "DeskRPG, Hermes, virtual office, AI coworkers, 3D, RPG, multiplayer, workspace",
   "auth.login": "Login",
