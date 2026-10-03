@@ -2358,6 +2358,7 @@ const ko: Record<string, string> = {
   "nav.tasks": "작업",
   "nav.artifacts": "아티팩트",
   "nav.meetings": "미팅",
+  "nav.approvals": "승인",
   "nav.review": "3D 스튜디오 리뷰",
   "gateways.employeesTitle": "이 게이트웨이의 직원",
   "gateways.employeesHint": "직원(Hermes 프로필) 등록·인격·외형·모델은 직원 화면에서 관리합니다.",
@@ -4018,6 +4019,13 @@ const ko: Record<string, string> = {
   "approvals.status.failed": "결정을 전달하지 못했습니다",
   "approvals.pending": "{npc}이(가) {approver}님의 승인을 기다리는 중",
   "approvals.roomBadge": "승인 대기 {n}",
+  "approvals.title": "승인",
+  "approvals.subtitle": "허가될 때까지 카드를 차단 상태로 보관하는 실행 전 관문입니다.",
+  "approvals.tabs.all": "전체",
+  "approvals.tabs.pending": "대기 중",
+  "approvals.tabs.decided": "결정됨",
+  "approvals.create.button": "새 묶음 생성",
+  "approvals.empty": "표시할 승인 항목이 없습니다.",
 };
 
 export default ko;

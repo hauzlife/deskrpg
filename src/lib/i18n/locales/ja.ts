@@ -2382,6 +2382,7 @@ const ja: Record<string, string> = {
   "nav.tasks": "タスク",
   "nav.artifacts": "成果物",
   "nav.meetings": "ミーティング",
+  "nav.approvals": "承認",
   "nav.review": "3Dスタジオレビュー",
   "gateways.employeesTitle": "このゲートウェイの社員",
   "gateways.employeesHint":
@@ -4060,6 +4061,13 @@ const ja: Record<string, string> = {
   "approvals.status.failed": "判断を伝えられませんでした",
   "approvals.pending": "{npc} は {approver} さんの承認を待っています",
   "approvals.roomBadge": "承認待ち {n}",
+  "approvals.title": "承認",
+  "approvals.subtitle": "許可されるまで保留されたカードを管理する実行前ゲート。",
+  "approvals.tabs.all": "すべて",
+  "approvals.tabs.pending": "承認待ち",
+  "approvals.tabs.decided": "決定済み",
+  "approvals.create.button": "新規一括承認",
+  "approvals.empty": "承認項目はありません。",
 };
 
 export default ja;

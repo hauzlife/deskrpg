@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { sortRooms, type RoomSummary } from "@/lib/chat-rooms-policy";
 import { roomMessagePreview } from "@/components/rooms/room-message-preview";
 import type { DmThreadEntry } from "@/lib/dm-threads";
@@ -75,6 +76,8 @@ type Props = {
   onSetStartPosition?: () => void;
   onAddNpc?: () => void;
   addNpcDisabled?: boolean;
+  onOpenApprovals?: () => void;
+  pendingApprovalsCount?: number;
 };
 
 function stateLabel(npc: NavigatorNpc, state: NpcStateKind, t: ReturnType<typeof useT>): string {
@@ -185,12 +188,27 @@ export default function WorkspaceNavigator(props: Props) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         <section aria-labelledby="workspace-spaces-heading">
-          <h3
-            id="workspace-spaces-heading"
-            className="px-2 pb-1 text-[11px] font-bold text-text-dim"
-          >
-            {t("workspace.spaces")}
-          </h3>
+          <div className="flex items-center justify-between px-2 pb-1">
+            <h3 id="workspace-spaces-heading" className="text-[11px] font-bold text-text-dim">
+              {t("workspace.spaces")}
+            </h3>
+            {props.onOpenApprovals && (
+              <button
+                type="button"
+                onClick={props.onOpenApprovals}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-surface-raised"
+                title={t("nav.approvals") || "Approvals"}
+              >
+                <ShieldCheck size={12} />
+                <span>{t("nav.approvals") || "Approvals"}</span>
+                {props.pendingApprovalsCount !== undefined && props.pendingApprovalsCount > 0 && (
+                  <span className="rounded-full bg-primary px-1.5 py-0.2 text-[9px] font-bold leading-none text-white">
+                    {props.pendingApprovalsCount}
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
           <div className="rounded-lg bg-surface-raised px-3 py-2 text-sm font-medium text-text">
             {props.workspaceName}
           </div>

@@ -14,12 +14,20 @@
  * picks it up, so there's no separate notification path — this is why the design doesn't
  * need a new channel.
  */
-import { and, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { approvalTargets, approvals, db, nowForDb } from "@/db";
-import { approvalBoardSlug, approvalTargetIds } from "@/lib/approvals";
+import {
+  approvalBoardSlug,
+  approvalTargetIds,
+  approvalTargetsByApproval,
+  createApprovalBatch,
+  type ApprovalBatchItemInput,
+} from "@/lib/approvals";
+import { attentionTime } from "@/lib/attention-routes";
 import {
   decideTargets,
   nextApprovalStatus,
@@ -27,7 +35,7 @@ import {
   type TargetDecision,
 } from "@/lib/approval-decision";
 import { rewriteRoomNotices } from "@/lib/room-notice-rewrite";
-import { cronError } from "@/lib/cron-access";
+import { cronError, requireChannelMember } from "@/lib/cron-access";
 import { initialStatusGate } from "@/lib/hermes/plugin-capability";
 import { pluginUpgradeRequired } from "@/lib/hermes/plugin-errors";
 import { getUserId } from "@/lib/internal-rpc";
@@ -35,6 +43,7 @@ import { resolveKanbanChannelContext } from "@/lib/kanban-access";
 import { dispatchOnce } from "@/lib/kanban-dispatch";
 import { schedulePollNow } from "@/lib/automation-poll-trigger";
 
+export type ChannelParams = { params: Promise<{ id: string }> };
 export type ApprovalParams = { params: Promise<{ id: string; approvalId: string }> };
 
 function readTargets(raw: unknown): TargetDecision[] | undefined | null {
@@ -198,4 +207,193 @@ export async function decideApproval(req: NextRequest, channelId: string, approv
     unblocked: plan.unblock.filter((id) => !failed.some((f) => f.task_id === id)),
     ...(failed.length > 0 ? { failed } : {}),
   });
+}
+
+/** GET — lists approvals for a channel with optional status filter and pagination. */
+export async function listApprovals(req: NextRequest, channelId: string) {
+  const userId = getUserId(req);
+  if (!userId) return cronError(401, "unauthorized", "unauthorized");
+
+  const memberAccess = await requireChannelMember(channelId, userId);
+  if (!memberAccess.ok) return memberAccess.response;
+
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status");
+  const limitParam = parseInt(url.searchParams.get("limit") || "50", 10);
+  const limit = Math.min(Math.max(Number.isNaN(limitParam) ? 50 : limitParam, 1), 100);
+  const offsetParam = parseInt(url.searchParams.get("offset") || "0", 10);
+  const offset = Math.max(Number.isNaN(offsetParam) ? 0 : offsetParam, 0);
+
+  const conditions = [eq(approvals.channelId, channelId)];
+  if (status && status !== "all") {
+    conditions.push(eq(approvals.status, status));
+  }
+
+  const rows = await db
+    .select()
+    .from(approvals)
+    .where(and(...conditions))
+    .orderBy(desc(approvals.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const approvalIds = rows.map((r) => r.id);
+  const targetsMap = await approvalTargetsByApproval(approvalIds);
+
+  const items = rows.map((r) => {
+    let source = null;
+    try {
+      source = JSON.parse(r.sourceJson);
+    } catch {}
+    const targets = targetsMap.get(r.id) ?? [];
+    return {
+      id: r.id,
+      channelId: r.channelId,
+      type: r.type,
+      status: r.status,
+      requestedBy: r.requestedBy,
+      title: r.title,
+      source,
+      boardSlug: approvalBoardSlug(r.payloadJson),
+      targetCount: targets.length,
+      taskIds: targets,
+      decidedBy: r.decidedBy,
+      decidedAt: r.decidedAt ? attentionTime(r.decidedAt) : null,
+      decisionNote: r.decisionNote,
+      createdAt: attentionTime(r.createdAt),
+    };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    approvals: items,
+    total: items.length,
+  });
+}
+
+/** GET — detailed view of a single approval including all target cards. */
+export async function getApprovalDetail(req: NextRequest, channelId: string, approvalId: string) {
+  const userId = getUserId(req);
+  if (!userId) return cronError(401, "unauthorized", "unauthorized");
+
+  const memberAccess = await requireChannelMember(channelId, userId);
+  if (!memberAccess.ok) return memberAccess.response;
+
+  const [row] = await db
+    .select()
+    .from(approvals)
+    .where(and(eq(approvals.id, approvalId), eq(approvals.channelId, channelId)))
+    .limit(1);
+
+  if (!row) return cronError(404, "approval_not_found", "approval not found");
+
+  const targetRows = await db
+    .select({ taskId: approvalTargets.taskId, decision: approvalTargets.decision })
+    .from(approvalTargets)
+    .where(eq(approvalTargets.approvalId, approvalId));
+
+  const resolved = await resolveKanbanChannelContext({
+    userId,
+    channelId,
+    ...(row.payloadJson ? { boardSlug: approvalBoardSlug(row.payloadJson) ?? undefined } : {}),
+  });
+
+  const targets = await Promise.all(
+    targetRows.map(async (t) => {
+      let taskDetail: {
+        title?: string;
+        status?: string;
+        priority?: string | number | null;
+        assignee?: string | null;
+      } | null = null;
+      if (resolved.ok) {
+        try {
+          const res = await resolved.ctx.client.kanban.getTask(resolved.ctx.boardSlug, t.taskId);
+          if (res.ok) {
+            taskDetail = {
+              title: res.data.task.title,
+              status: res.data.task.status,
+              priority: res.data.task.priority,
+              assignee: res.data.task.assignee,
+            };
+          }
+        } catch {}
+      }
+      return {
+        taskId: t.taskId,
+        decision: t.decision,
+        task: taskDetail,
+      };
+    }),
+  );
+
+  let source = null;
+  try {
+    source = JSON.parse(row.sourceJson);
+  } catch {}
+
+  return NextResponse.json({
+    ok: true,
+    approval: {
+      id: row.id,
+      channelId: row.channelId,
+      type: row.type,
+      status: row.status,
+      requestedBy: row.requestedBy,
+      title: row.title,
+      source,
+      boardSlug: approvalBoardSlug(row.payloadJson),
+      targets,
+      decidedBy: row.decidedBy,
+      decidedAt: row.decidedAt ? attentionTime(row.decidedAt) : null,
+      decisionNote: row.decisionNote,
+      createdAt: attentionTime(row.createdAt),
+    },
+  });
+}
+
+/** POST — creates a new approval batch directly (manual or system initiated). */
+export async function createApproval(req: NextRequest, channelId: string) {
+  const userId = getUserId(req);
+  if (!userId) return cronError(401, "unauthorized", "unauthorized");
+
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body) return cronError(400, "invalid_body", "JSON body required");
+
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title) return cronError(400, "missing_title", "title is required");
+
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    return cronError(400, "missing_items", "items array is required and must not be empty");
+  }
+
+  const resolved = await resolveKanbanChannelContext({
+    userId,
+    channelId,
+    ...(typeof body.boardSlug === "string" ? { boardSlug: body.boardSlug } : {}),
+  });
+  if (!resolved.ok) return resolved.response;
+
+  const requestedBy =
+    typeof body.requestedBy === "string" && body.requestedBy ? body.requestedBy : `user:${userId}`;
+
+  const source =
+    body.source && typeof body.source === "object"
+      ? (body.source as { kind: "meeting" | "manual" | "chat_proposal"; id: string })
+      : { kind: "manual" as const, id: `manual-${randomUUID().slice(0, 8)}` };
+
+  const result = await createApprovalBatch(resolved.ctx, {
+    type: typeof body.type === "string" && body.type ? body.type : "task_execution",
+    title,
+    requestedBy,
+    source,
+    boardSlug: resolved.ctx.boardSlug,
+    items: body.items as ApprovalBatchItemInput[],
+  });
+
+  if (!result.ok) {
+    return cronError(400, result.errorCode, `Failed to create approval batch: ${result.errorCode}`);
+  }
+
+  return NextResponse.json(result, { status: 201 });
 }

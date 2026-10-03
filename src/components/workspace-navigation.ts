@@ -19,6 +19,7 @@ export type WorkspaceNavKey =
   | "tasks"
   | "artifacts"
   | "meetings"
+  | "approvals"
   | "review";
 
 export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }> = [
@@ -29,6 +30,7 @@ export const WORKSPACE_NAV: ReadonlyArray<{ key: WorkspaceNavKey; href: string }
   { key: "tasks", href: "/tasks" },
   { key: "artifacts", href: "/artifacts" },
   { key: "meetings", href: "/meetings" },
+  { key: "approvals", href: "/approvals" },
   { key: "review", href: "/ui2-review" },
 ];
 

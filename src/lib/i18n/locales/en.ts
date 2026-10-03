@@ -2369,6 +2369,7 @@ const en: Record<string, string> = {
   "nav.tasks": "Tasks",
   "nav.artifacts": "Artifacts",
   "nav.meetings": "Meetings",
+  "nav.approvals": "Approvals",
   "nav.review": "3D Studio Review",
   "gateways.employeesTitle": "This gateway's employees",
   "gateways.employeesHint":
@@ -4034,6 +4035,13 @@ const en: Record<string, string> = {
   "approvals.status.failed": "Couldn't deliver the decision",
   "approvals.pending": "{npc} is waiting for {approver}'s approval",
   "approvals.roomBadge": "{n} awaiting approval",
+  "approvals.title": "Approvals",
+  "approvals.subtitle": "Pre-execution gate holding blocked cards until authorized.",
+  "approvals.tabs.all": "All",
+  "approvals.tabs.pending": "Pending",
+  "approvals.tabs.decided": "Decided",
+  "approvals.create.button": "New Batch",
+  "approvals.empty": "No approvals found in this view.",
 };
 
 export default en;

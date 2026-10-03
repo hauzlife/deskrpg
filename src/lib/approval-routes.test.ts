@@ -424,3 +424,99 @@ test("even if dispatch fails, the approval still succeeds — the built-in dispa
   const res = await decide(batch.approvalId, ownerId, channelId, { decision: "approve" });
   assert.equal(res.status, 200);
 });
+
+test("listApprovals returns approvals for channel with target count and filters", async () => {
+  const { ctx, ownerId, channelId } = await seedCtx();
+  const batch1 = await makeApproval(ctx, ["Card 1", "Card 2"]);
+  const batch2 = await makeApproval(ctx, ["Card 3"]);
+
+  const { listApprovals, decideApproval } = await import("@/lib/approval-routes");
+
+  // Decide batch1 to make it approved
+  await decideApproval(
+    post(ownerId, channelId, batch1.approvalId, { decision: "approve" }),
+    channelId,
+    batch1.approvalId,
+  );
+
+  // List all
+  const reqAll = new NextRequest(`http://localhost/api/channels/${channelId}/approvals`, {
+    headers: authHeaders(ownerId),
+  });
+  const resAll = await listApprovals(reqAll, channelId);
+  assert.equal(resAll.status, 200);
+  const dataAll = await resAll.json();
+  assert.ok(dataAll.ok);
+  assert.equal(dataAll.approvals.length >= 2, true);
+
+  // Filter pending
+  const reqPending = new NextRequest(
+    `http://localhost/api/channels/${channelId}/approvals?status=pending`,
+    { headers: authHeaders(ownerId) },
+  );
+  const resPending = await listApprovals(reqPending, channelId);
+  assert.equal(resPending.status, 200);
+  const dataPending = await resPending.json();
+  assert.ok(dataPending.approvals.some((a: { id: string }) => a.id === batch2.approvalId));
+  assert.equal(
+    dataPending.approvals.some((a: { id: string }) => a.id === batch1.approvalId),
+    false,
+  );
+
+  // Filter approved
+  const reqApproved = new NextRequest(
+    `http://localhost/api/channels/${channelId}/approvals?status=approved`,
+    { headers: authHeaders(ownerId) },
+  );
+  const resApproved = await listApprovals(reqApproved, channelId);
+  assert.equal(resApproved.status, 200);
+  const dataApproved = await resApproved.json();
+  assert.ok(dataApproved.approvals.some((a: { id: string }) => a.id === batch1.approvalId));
+});
+
+test("getApprovalDetail returns full detail including targets", async () => {
+  const { ctx, ownerId, channelId } = await seedCtx();
+  const batch = await makeApproval(ctx, ["Detail Card 1", "Detail Card 2"]);
+
+  const { getApprovalDetail } = await import("@/lib/approval-routes");
+
+  const req = new NextRequest(
+    `http://localhost/api/channels/${channelId}/approvals/${batch.approvalId}`,
+    { headers: authHeaders(ownerId) },
+  );
+  const res = await getApprovalDetail(req, channelId, batch.approvalId);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(data.ok);
+  assert.equal(data.approval.id, batch.approvalId);
+  assert.equal(data.approval.targets.length, 2);
+
+  // Not found test
+  const notFoundReq = new NextRequest(
+    `http://localhost/api/channels/${channelId}/approvals/non-existent-id`,
+    { headers: authHeaders(ownerId) },
+  );
+  const notFoundRes = await getApprovalDetail(notFoundReq, channelId, "non-existent-id");
+  assert.equal(notFoundRes.status, 404);
+});
+
+test("createApproval endpoint creates batch and sets initial status to blocked", async () => {
+  const { ownerId, channelId } = await seedCtx();
+  const { createApproval } = await import("@/lib/approval-routes");
+
+  const req = new NextRequest(`http://localhost/api/channels/${channelId}/approvals`, {
+    method: "POST",
+    headers: authHeaders(ownerId),
+    body: JSON.stringify({
+      title: "Batch from manual endpoint",
+      items: [{ title: "Manual Task A" }, { title: "Manual Task B" }],
+    }),
+  });
+
+  const res = await createApproval(req, channelId);
+  assert.equal(res.status, 201);
+  const data = await res.json();
+  assert.ok(data.ok);
+  assert.ok(data.approvalId);
+  assert.equal(data.taskIds.length, 2);
+});

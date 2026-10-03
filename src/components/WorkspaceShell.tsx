@@ -11,6 +11,7 @@ import {
   KanbanSquare,
   Package,
   CalendarDays,
+  ShieldCheck,
   Activity,
 } from "lucide-react";
 import DeskRpgMark from "./DeskRpgMark";
@@ -36,6 +37,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     tasks: KanbanSquare,
     artifacts: Package,
     meetings: CalendarDays,
+    approvals: ShieldCheck,
     review: Activity,
   } as const;
   const links = WORKSPACE_NAV.map(({ key, href }) => ({
@@ -109,6 +111,13 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           >
             <CalendarDays size={14} aria-hidden="true" />
             <span>{t("nav.meetings")}</span>
+          </Link>
+          <Link
+            href="/approvals"
+            className="workspace-sidebar-action-link flex items-center gap-1.5"
+          >
+            <ShieldCheck size={14} aria-hidden="true" />
+            <span>{t("nav.approvals")}</span>
           </Link>
         </div>
         <div className="workspace-sidebar-art" aria-hidden="true">

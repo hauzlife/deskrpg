@@ -16,6 +16,7 @@ test("sidebar has items in onboarding order — my character first", () => {
       "/tasks",
       "/artifacts",
       "/meetings",
+      "/approvals",
       "/ui2-review",
     ],
   );

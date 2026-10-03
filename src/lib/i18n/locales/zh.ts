@@ -2276,6 +2276,7 @@ const zh: Record<string, string> = {
   "nav.tasks": "任务",
   "nav.artifacts": "产物",
   "nav.meetings": "会议",
+  "nav.approvals": "审批",
   "nav.review": "3D工作室审查",
   "gateways.employeesTitle": "此网关的员工",
   "gateways.employeesHint": "员工(Hermes 配置文件)的注册、人格、外观与模型在员工页面管理。",
@@ -3855,6 +3856,13 @@ const zh: Record<string, string> = {
   "approvals.status.failed": "无法传达决定",
   "approvals.pending": "{npc} 正在等待 {approver} 的批准",
   "approvals.roomBadge": "待批准 {n}",
+  "approvals.title": "审批",
+  "approvals.subtitle": "在获得授权前保持任务处于阻止状态的预执行门禁。",
+  "approvals.tabs.all": "全部",
+  "approvals.tabs.pending": "待审批",
+  "approvals.tabs.decided": "已决定",
+  "approvals.create.button": "新建审批批次",
+  "approvals.empty": "未找到审批项目。",
 };
 
 export default zh;

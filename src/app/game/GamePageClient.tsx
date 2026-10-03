@@ -51,6 +51,7 @@ import {
   KanbanSquare,
   AlarmClock,
   Package,
+  ShieldCheck,
   ArrowUpCircle,
 } from "lucide-react";
 import type { Socket } from "socket.io-client";
@@ -134,6 +135,7 @@ import CronModal from "@/components/cron/CronModal";
 import ArtifactsModal from "@/components/artifacts/ArtifactsModal";
 import ConnectorManagerModal from "@/components/connectors/ConnectorManagerModal";
 import ApprovalPolicyModal from "@/components/approvals/ApprovalPolicyModal";
+import ApprovalsPanel from "@/components/approvals/ApprovalsPanel";
 import SkillManagerModal from "@/components/skills/SkillManagerModal";
 import type { SourceTarget } from "@/components/artifacts/artifact-view-model";
 import { createArtifactsApi } from "@/components/artifacts/artifacts-api";
@@ -332,6 +334,8 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
   // The decision inbox — things a person must answer, like approvals, reviews and blocks. Opened by the header button and approval request notices.
   // Without this screen, cards registered in a meeting would stay awaiting approval (`blocked`) forever.
   const [showAttention, setShowAttention] = useState(false);
+  // Pre-execution card approvals
+  const [showApprovals, setShowApprovals] = useState(false);
   // The channel cron screen (T10, R15). "이력 열기" (R30) opens it at that job's run history.
   const [showCron, setShowCron] = useState(false);
   const [cronInitialJobId, setCronInitialJobId] = useState<string | null>(null);
@@ -3095,6 +3099,7 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
             onSetStartPosition={isOwner ? handleStartPositionSetting : undefined}
             onAddNpc={isOwner ? handleHireNpc : undefined}
             addNpcDisabled={!gatewayId}
+            onOpenApprovals={() => setShowApprovals(true)}
           />
         }
         conversation={conversationPanel}
@@ -3403,6 +3408,17 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
           >
             <Package className="w-3 h-3" />
             <span className="header-full-label">{t("artifacts.open")}</span>
+          </button>
+
+          {/* Channel approvals */}
+          <button
+            onClick={() => setShowApprovals(true)}
+            title={t("nav.approvals") || "Approvals"}
+            aria-label={t("nav.approvals") || "Approvals"}
+            className="flex items-center gap-1 px-2.5 py-1 bg-primary/80 hover:bg-primary text-white rounded-md text-caption font-semibold"
+          >
+            <ShieldCheck className="w-3 h-3" />
+            <span className="header-full-label">{t("nav.approvals") || "Approvals"}</span>
           </button>
 
           <GrowthStarButton
@@ -3856,6 +3872,26 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
           onOpenSource={openArtifactSource}
           onClose={closeArtifacts}
         />
+      )}
+
+      {showApprovals && channelId && (
+        <Modal
+          open
+          onClose={() => setShowApprovals(false)}
+          title={t("nav.approvals") || "Approvals"}
+          size="lg"
+        >
+          <Modal.Body>
+            <ApprovalsPanel
+              channelId={channelId}
+              onClose={() => setShowApprovals(false)}
+              onOpenCard={(taskId) => {
+                setShowApprovals(false);
+                openNoticeCard(taskId);
+              }}
+            />
+          </Modal.Body>
+        </Modal>
       )}
 
       {skillManagerNpc && channelId && (
