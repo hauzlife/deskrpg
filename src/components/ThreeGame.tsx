@@ -274,7 +274,15 @@ export default function ThreeGame(props: ThreeGameProps) {
     <div data-meeting={meetingCamera.active} className="office-presentation">
       {!failed && (
         <>
-          <div ref={host} className="office-three-canvas" />
+          <div
+            ref={host}
+            className="office-three-canvas"
+            onClick={() => {
+              if (cameraMode === "first_person") {
+                renderer.current?.lockPointer();
+              }
+            }}
+          />
           <div ref={labels} className="office-actor-labels" />
           {cameraMode === "first_person" && <div className="office-crosshair" />}
           <div className="office-camera-tools" aria-label={t("game.camera.controls")}>
@@ -342,7 +350,12 @@ export default function ThreeGame(props: ThreeGameProps) {
             </button>
             <button
               type="button"
-              onClick={() => renderer.current?.cycleCameraMode()}
+              onClick={() => {
+                const next = renderer.current?.cycleCameraMode();
+                if (next === "first_person") {
+                  renderer.current?.lockPointer();
+                }
+              }}
               disabled={meetingCamera.active}
               title={`${t(`game.camera.mode.${cameraMode}`)} (V)`}
               aria-label={`${t(`game.camera.mode.${cameraMode}`)} (V)`}

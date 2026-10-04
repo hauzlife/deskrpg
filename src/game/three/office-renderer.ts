@@ -505,17 +505,24 @@ export class OfficeRenderer {
       this.following = true;
       this.overviewDimensions = null;
       if (this.camera) {
-        this.camera.position.set(p.x, 1.35, p.z);
+        this.camera.position.set(p.x, 1.92, p.z);
         if (prevMode === "isometric") {
-          const renderedPlayer = player ? this.actors?.get(player.id) : null;
-          const fallbackYaw = player
-            ? { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 }[player.direction] ?? 0
-            : 0;
-          const yaw = renderedPlayer?.yaw ?? fallbackYaw;
-          const euler = new T.Euler(0, yaw, 0, "YXZ");
+          const dir = player?.direction;
+          const initialYaw =
+            dir === "down"
+              ? Math.PI
+              : dir === "up"
+                ? 0
+                : dir === "left"
+                  ? Math.PI / 2
+                  : dir === "right"
+                    ? -Math.PI / 2
+                    : Math.PI;
+          const euler = new T.Euler(0, initialYaw, 0, "YXZ");
           this.camera.quaternion.setFromEuler(euler);
         }
       }
+      this.lockPointer();
     } else if (mode === "third_person") {
       if (this.pointerLock?.isLocked) this.pointerLock.unlock();
       if (this.controls) {
@@ -565,6 +572,14 @@ export class OfficeRenderer {
     }
     this.lastPlayerWorldPos = { x: p.x, z: p.z };
     this.onCameraModeChange?.(this.cameraMode);
+  }
+  lockPointer() {
+    if (this.cameraMode !== "first_person") return;
+    try {
+      this.pointerLock?.lock();
+    } catch {
+      // browser user gesture requirement
+    }
   }
   cycleCameraMode(): CameraViewMode {
     if (this.meetingCamera.active) return this.cameraMode;
@@ -792,15 +807,20 @@ export class OfficeRenderer {
   private pointerDown = (e: PointerEvent) => {
     if (this.meetingCamera.active) this.meetingPointer = { x: e.clientX, y: e.clientY };
     this.gesture.start(e);
-    if (e.isPrimary && (e.button === 0 || e.button === 2))
-      this.renderer.domElement.setPointerCapture(e.pointerId);
+    if (this.cameraMode !== "first_person" && e.isPrimary && (e.button === 0 || e.button === 2)) {
+      try {
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        // pointer capture can fail if already captured or locking
+      }
+    }
 
     if (this.cameraMode === "first_person") {
       this.isPointerDownOnCanvas = true;
       this.lastDragX = e.clientX;
       this.lastDragY = e.clientY;
-      if (e.button === 0 && this.pointerLock && !this.pointerLock.isLocked) {
-        this.pointerLock.lock();
+      if (e.button === 0) {
+        this.lockPointer();
       }
     }
   };
@@ -809,8 +829,12 @@ export class OfficeRenderer {
     if (this.cameraMode !== "first_person" || !this.pointerLock?.isLocked) {
       if (this.gesture.finish(e)) this.point(e, "down");
     }
-    if (this.renderer.domElement.hasPointerCapture(e.pointerId))
-      this.renderer.domElement.releasePointerCapture(e.pointerId);
+    try {
+      if (this.renderer.domElement.hasPointerCapture(e.pointerId))
+        this.renderer.domElement.releasePointerCapture(e.pointerId);
+    } catch {
+      // safe fallback
+    }
   };
   private pointerCancel = () => {
     this.isPointerDownOnCanvas = false;
@@ -838,21 +862,33 @@ export class OfficeRenderer {
   private pointerMove = (e: PointerEvent) => {
     // The gesture (click or drag) must be checked per event to be accurate, and it is cheap.
     this.gesture.move(e);
-    if (
-      this.cameraMode === "first_person" &&
-      this.isPointerDownOnCanvas &&
-      !this.pointerLock?.isLocked
-    ) {
-      const deltaX = e.clientX - this.lastDragX;
-      const deltaY = e.clientY - this.lastDragY;
-      this.lastDragX = e.clientX;
-      this.lastDragY = e.clientY;
-      const euler = new T.Euler(0, 0, 0, "YXZ");
-      euler.setFromQuaternion(this.camera.quaternion);
-      euler.y -= deltaX * 0.003;
-      euler.x -= deltaY * 0.003;
-      euler.x = Math.max(-Math.PI * 0.48, Math.min(Math.PI * 0.48, euler.x));
-      this.camera.quaternion.setFromEuler(euler);
+    if (this.cameraMode === "first_person") {
+      if (!this.pointerLock?.isLocked) {
+        const dx =
+          e.movementX !== undefined && Math.abs(e.movementX) < 300
+            ? e.movementX
+            : this.lastDragX
+              ? e.clientX - this.lastDragX
+              : 0;
+        const dy =
+          e.movementY !== undefined && Math.abs(e.movementY) < 300
+            ? e.movementY
+            : this.lastDragY
+              ? e.clientY - this.lastDragY
+              : 0;
+        this.lastDragX = e.clientX;
+        this.lastDragY = e.clientY;
+
+        if (dx !== 0 || dy !== 0) {
+          const euler = new T.Euler(0, 0, 0, "YXZ");
+          euler.setFromQuaternion(this.camera.quaternion);
+          euler.y -= dx * 0.0025;
+          euler.x -= dy * 0.0025;
+          euler.x = Math.max(-Math.PI * 0.46, Math.min(Math.PI * 0.46, euler.x));
+          this.camera.quaternion.setFromEuler(euler);
+        }
+      }
+      return;
     }
     if (this.cameraInteracting) return;
     this.pendingMove = e;
@@ -1734,7 +1770,7 @@ export class OfficeRenderer {
         this.lastPlayerWorldPos = { x: p.x, z: p.z };
 
         if (this.cameraMode === "first_person") {
-          this.camera.position.set(p.x, 1.35, p.z);
+          this.camera.position.set(p.x, 1.92, p.z);
           const dir = new T.Vector3();
           this.camera.getWorldDirection(dir);
           dir.y = 0;
@@ -1771,7 +1807,9 @@ export class OfficeRenderer {
           });
         }
       }
-      this.controls.update();
+      if (this.cameraMode !== "first_person") {
+        this.controls.update();
+      }
       this.meetingCamera.update(
         this.priorFrame ? Math.min(0.1, (time - this.priorFrame) / 1000) : 0,
         this.lastActors,
