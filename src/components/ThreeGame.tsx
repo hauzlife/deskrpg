@@ -25,6 +25,7 @@ import type { MeetingSpeaker } from "@/game/three/meeting-camera";
 import { loadMeetingCameraPrefs, type MeetingCameraPrefs } from "@/lib/meeting-camera-prefs";
 import type { Socket } from "socket.io-client";
 import ThemeToggle from "./ThemeToggle";
+import AgentTerminalModal from "./agent/AgentTerminalModal";
 import "@/game/three/office.css";
 
 export interface ThreeGameProps {
@@ -56,6 +57,10 @@ export default function ThreeGame(props: ThreeGameProps) {
     null,
   );
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [terminalAgent, setTerminalAgent] = useState<{
+    npcId: string;
+    npcName: string;
+  } | null>(null);
   const t = useT();
   const { locale } = useLocale();
   const localeRef = useRef(locale);
@@ -122,6 +127,7 @@ export default function ThreeGame(props: ThreeGameProps) {
       view = new OfficeRenderer(host.current, labels.current);
       renderer.current = view;
       view.onKanbanOpen = () => EventBus.emit("kanban:open");
+      view.onAgentTerminalOpen = (data) => setTerminalAgent(data);
     } catch (err) {
       console.error("Three.js initialization failed", err);
       // WebGL capability failure is external state discovered only during allocation.
@@ -252,9 +258,14 @@ export default function ThreeGame(props: ThreeGameProps) {
     const handlePointerLock = (payload: { locked: boolean }) => {
       setIsPointerLocked(payload.locked);
     };
+    const handleOpenTerminal = (data: { npcId: string; npcName: string }) => {
+      setTerminalAgent(data);
+    };
     EventBus.on("camera:pointer-lock", handlePointerLock);
+    EventBus.on("agent:terminal-open", handleOpenTerminal);
     return () => {
       EventBus.off("camera:pointer-lock", handlePointerLock);
+      EventBus.off("agent:terminal-open", handleOpenTerminal);
     };
   }, []);
 
@@ -439,6 +450,26 @@ export default function ThreeGame(props: ThreeGameProps) {
                         : "meeting.prepare",
                   )}
             </button>
+          )}
+          {terminalAgent && (
+            <AgentTerminalModal
+              npcId={terminalAgent.npcId}
+              npcName={terminalAgent.npcName}
+              socket={props.socket}
+              characterId={props.characterId}
+              onClose={() => setTerminalAgent(null)}
+              availableAgents={
+                bridge.current
+                  ? bridge.current
+                      .actors()
+                      .filter((a) => a.kind === "npc")
+                      .map((a) => ({ id: a.id, name: a.name }))
+                  : []
+              }
+              onSelectAgent={(agent) =>
+                setTerminalAgent({ npcId: agent.id, npcName: agent.name })
+              }
+            />
           )}
         </>
       )}

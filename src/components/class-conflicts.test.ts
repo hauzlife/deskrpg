@@ -121,6 +121,8 @@ const WHITE_TEXT_ON_DARK_PARENT = new Set([
   "app/game/GamePageClient.tsx",
   // The login button gets its background from an inline style (var(--color-primary)).
   "app/auth/AuthPageClient.tsx",
+  // Dark terminal CLI modal
+  "components/agent/AgentTerminalModal.tsx",
 ]);
 
 test("white text always comes with its own background", () => {

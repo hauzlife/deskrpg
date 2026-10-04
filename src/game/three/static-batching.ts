@@ -12,7 +12,8 @@ function eligibleTransform(object: T.Mesh, root: T.Group, inverse: T.Matrix4) {
       !parent.visible ||
       parent.renderOrder !== 0 ||
       parent.userData.dynamicAsset ||
-      parent.userData.meetingWall
+      parent.userData.meetingWall ||
+      parent.userData.interactiveWorkstation
     )
       return false;
   return (
@@ -98,7 +99,11 @@ export function batchStaticFurniture(
     )
       return;
     for (let parent: T.Object3D | null = object; parent && parent !== root; parent = parent.parent)
-      if (!options.batchSeats && (parent.userData.seat || parent.userData.seats)) return;
+      if (
+        (!options.batchSeats && (parent.userData.seat || parent.userData.seats)) ||
+        parent.userData.interactiveWorkstation
+      )
+        return;
     const m = object.material;
     const key = [
       materialKey(

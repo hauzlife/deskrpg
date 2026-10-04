@@ -244,6 +244,16 @@ export class OfficeSimulation {
   private npcBubbles: Map<string, { text?: string }> = new Map();
   /** Bubbles shown as activity indicators. Counted separately to tell them apart from "has something to say" bubbles. */
   private activityBubbles: Set<string> = new Set();
+  /** Active leadership reports — mapping reportingNpcId to the report details and squad lead */
+  private activeLeadReports: Map<
+    string,
+    {
+      leadNpcId: string;
+      cardTitle: string;
+      kind: string;
+      messageId: string;
+    }
+  > = new Map();
 
   // ---------------------------------------------------------------------------
   // Path following
@@ -693,6 +703,17 @@ export class OfficeSimulation {
       this.handleNpcCallToPlayer(payload),
     );
 
+    this.eventScope.on(
+      "npc:report-to-lead",
+      (payload: {
+        reportingNpcId: string;
+        leadNpcId: string;
+        cardTitle: string;
+        kind: string;
+        messageId: string;
+      }) => this.handleNpcReportToLead(payload),
+    );
+
     // The NPC's response finished — if far from the player, walk over and deliver it
     this.eventScope.on("npc:deliver-response", (payload: { npcId: string; npcName: string }) => {
       if (!this.player) return;
@@ -929,7 +950,7 @@ export class OfficeSimulation {
   ): NpcPathfinder {
     return (sx, sy, ex, ey, walkable) => {
       const actors = this.trafficActors().filter((actor) => actor.id !== npc.id);
-      if (destinationTag)
+      if (destinationTag && destinationTag !== "lead-report")
         return findTaggedDestinationPath(
           this.ambientZones,
           destinationTag,
@@ -1571,6 +1592,116 @@ export class OfficeSimulation {
       bubbleText: payload.bubbleText,
       // Call — when called they come running (default 2× the usual walk).
       speed: this.motion.summon,
+    });
+  }
+
+  private handleNpcReportToLead(payload: {
+    reportingNpcId: string;
+    leadNpcId: string;
+    cardTitle: string;
+    kind: string;
+    messageId: string;
+  }): void {
+    const reportingNpc = this.npcs.find((n) => n.id === payload.reportingNpcId);
+    const leadNpc = this.npcs.find((n) => n.id === payload.leadNpcId);
+    if (!reportingNpc || !leadNpc) return;
+
+    if (this.socket?.id) {
+      this.takeNpcOwnership(reportingNpc.id, this.socket.id);
+    }
+
+    if (reportingNpc.moveState === "strolling") {
+      reportingNpc.stopStroll();
+    } else if (reportingNpc.moveState !== "idle") {
+      reportingNpc.cancelMovement();
+    }
+
+    const leadCol = Math.floor(leadNpc.pixelX / TILE_SIZE);
+    const leadRow = Math.floor(leadNpc.pixelY / TILE_SIZE);
+    const targetTile = this.findNearestWalkableTile(leadCol, leadRow) ?? { x: leadCol, y: leadRow };
+
+    this.activeLeadReports.set(reportingNpc.id, payload);
+    this.npcTilePositions.delete(`${reportingNpc.homeCol},${reportingNpc.homeRow}`);
+    reportingNpc.calledForRoom = null;
+
+    const started = reportingNpc.moveTo(
+      targetTile.x,
+      targetTile.y,
+      (sx, sy, ex, ey, w) =>
+        findTrafficPath(
+          sx,
+          sy,
+          ex,
+          ey,
+          w,
+          this.trafficActors().filter((a) => a.id !== reportingNpc.id),
+        ),
+      this.createNpcWalkValidator(),
+      {
+        speed: this.motion.summon,
+        destinationTag: "lead-report",
+      },
+    );
+
+    if (!started) {
+      this.activeLeadReports.delete(reportingNpc.id);
+      this.npcTilePositions.add(`${reportingNpc.homeCol},${reportingNpc.homeRow}`);
+      EventBus.emit("npc:lead-report-failed", {
+        messageId: payload.messageId,
+        reportingNpcId: reportingNpc.id,
+      });
+    }
+  }
+
+  private handleLeadReportArrival(
+    npc: NpcController,
+    report: { leadNpcId: string; cardTitle: string; kind: string; messageId: string },
+  ): void {
+    const leadNpc = this.npcs.find((n) => n.id === report.leadNpcId);
+    if (leadNpc) {
+      const dx = leadNpc.pixelX - npc.pixelX;
+      const dy = leadNpc.pixelY - npc.pixelY;
+      npc.direction =
+        Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? DIR_RIGHT : DIR_LEFT) : dy > 0 ? DIR_DOWN : DIR_UP;
+      leadNpc.direction =
+        Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? DIR_LEFT : DIR_RIGHT) : dy > 0 ? DIR_UP : DIR_DOWN;
+    }
+
+    const kindLabel = report.kind === "card_review" ? "Revisão" : "Entregue";
+    const bubbleText = `📋 [${kindLabel}]: ${report.cardTitle}`;
+    EventBus.emit("npc:bubble", {
+      npcId: npc.id,
+      text: bubbleText,
+      durationMs: 5000,
+    });
+    EventBus.emit("chat:speech", {
+      actorId: npc.id,
+      text: bubbleText,
+    });
+
+    if (leadNpc) {
+      this.scheduler.delay(this.now, 1000, () => {
+        const replyText = "👍 Ciente, conferindo!";
+        EventBus.emit("npc:bubble", {
+          npcId: leadNpc.id,
+          text: replyText,
+          durationMs: 3500,
+        });
+        EventBus.emit("chat:speech", {
+          actorId: leadNpc.id,
+          text: replyText,
+        });
+      });
+    }
+
+    EventBus.emit("npc:lead-reported", {
+      messageId: report.messageId,
+      reportingNpcId: npc.id,
+      leadNpcId: report.leadNpcId,
+    });
+
+    this.scheduler.delay(this.now, 5000, () => {
+      this.sendNpcHome(npc);
     });
   }
 
@@ -2916,27 +3047,33 @@ export class OfficeSimulation {
         this.socket?.emit("npc:arrived", { channelId: this.channelId, npcId: npc.id });
       }
       if (result === "arrived") {
-        if (!npc.calledForRoom)
-          EventBus.emit("npc:bubble", {
-            npcId: npc.id,
-            text: npc.arrivalBubbleText || undefined,
+        const leadReport = this.activeLeadReports.get(npc.id);
+        if (leadReport) {
+          this.activeLeadReports.delete(npc.id);
+          this.handleLeadReportArrival(npc, leadReport);
+        } else {
+          if (!npc.calledForRoom)
+            EventBus.emit("npc:bubble", {
+              npcId: npc.id,
+              text: npc.arrivalBubbleText || undefined,
+            });
+          EventBus.emit("toast:show", {
+            messageKey: "game.pressToTalk",
+            params: { name: npc.name },
           });
-        EventBus.emit("toast:show", {
-          messageKey: "game.pressToTalk",
-          params: { name: npc.name },
-        });
-        EventBus.emit("npc:movement-arrived", {
-          npcId: npc.id,
-          npcName: npc.name,
-          pendingMessage: npc.pendingMessage,
-        });
-        publishNpcArrival((event, payload) => this.socket?.emit(event, payload), {
-          channelId: this.channelId,
-          npcId: npc.id,
-          x: npc.pixelX,
-          y: npc.pixelY,
-          direction: directionName(npc.direction),
-        });
+          EventBus.emit("npc:movement-arrived", {
+            npcId: npc.id,
+            npcName: npc.name,
+            pendingMessage: npc.pendingMessage,
+          });
+          publishNpcArrival((event, payload) => this.socket?.emit(event, payload), {
+            channelId: this.channelId,
+            npcId: npc.id,
+            x: npc.pixelX,
+            y: npc.pixelY,
+            direction: directionName(npc.direction),
+          });
+        }
       } else if (result === "returning-done") {
         this.npcTilePositions.add(`${npc.homeCol},${npc.homeRow}`);
         this.finishNpcReturn(npc, true);

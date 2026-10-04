@@ -41,7 +41,7 @@ import { resolveSeat, seatAt, sofaSeats, furnitureSeats, type Seat } from "./sea
 import { createGaitTracker } from "./gait";
 import { PointerGesture } from "./pointer-gesture";
 import { buildBoundsTrees } from "./raycast-acceleration";
-import { pickFurnitureSeat } from "./seat-picking";
+import { pickFurnitureSeat, pickWorkstation } from "./seat-picking";
 import {
   resolveSeatAction,
   seatReservationId,
@@ -203,6 +203,12 @@ export class OfficeRenderer {
   private bridge: OfficeBridge | null = null;
   private gesture = new PointerGesture();
   public onKanbanOpen: () => void = () => {};
+  public onAgentTerminalOpen: (data: {
+    npcId: string;
+    npcName: string;
+    col?: number;
+    row?: number;
+  }) => void = () => {};
   private board: T.Group | null = null;
   private boardArrival = new BoardArrival();
   private meetingEntryWalking = false;
@@ -964,7 +970,7 @@ export class OfficeRenderer {
       true,
     )[0];
     let actorId: string | undefined;
-    let target = this.ray.ray.intersectPlane(this.ground, new T.Vector3());
+    let target = this.ground ? this.ray.ray.intersectPlane(this.ground, new T.Vector3()) : null;
     if (hit && !this.bridge.editor().placement) {
       let root: T.Object3D | null = hit.object;
       while (root && !root.userData.actorId) root = root.parent;
@@ -977,13 +983,69 @@ export class OfficeRenderer {
         }
       }
     }
+
+    const pickedWs =
+      !editor.placement && !editor.spawn
+        ? pickWorkstation(this.ray, this.world.children)
+        : null;
+    const pickedSeat =
+      !editor.placement && !editor.spawn
+        ? pickFurnitureSeat(this.ray, this.world.children)
+        : null;
+
+    if (
+      pickedWs &&
+      (!hit || pickedWs.hit.distance < hit.distance) &&
+      (!pickedSeat || pickedWs.hit.distance <= pickedSeat.hit.distance)
+    ) {
+      const compGroup = pickedWs.owner;
+      this.setHoveredSeat(null);
+      this.hoveredActorId = undefined;
+      if (kind === "down") {
+        this.setSelectedSeat(null);
+        this.selectedActorId = undefined;
+      }
+      this.furnitureHighlight.highlight(compGroup);
+      this.renderer.domElement.title = "Workstation Terminal (Click to view logs)";
+      this.renderer.domElement.style.cursor = "pointer";
+      if (this.cursor) this.cursor.visible = false;
+      if (kind === "down" && e.button === 0) {
+        const cCol = compGroup.userData.workstationCol ?? 0;
+        const cRow = compGroup.userData.workstationRow ?? 0;
+        const npcs = this.lastActors.filter((a) => a.kind === "npc");
+        const sortedNpcs = npcs
+          .map((a) => {
+            const pw = pixelToWorld(a.x, a.y);
+            return {
+              actor: a,
+              dist: Math.hypot(pw.x - (cCol + 0.5), pw.z - (cRow + 0.5)),
+            };
+          })
+          .sort((a, b) => a.dist - b.dist);
+        const targetNpc = sortedNpcs[0]?.actor ?? {
+          id: npcs[0]?.id ?? "workstation-agent",
+          name: npcs[0]?.name ?? "Agent",
+        };
+        const payload = {
+          npcId: targetNpc.id,
+          npcName: targetNpc.name,
+          col: cCol,
+          row: cRow,
+        };
+        this.onAgentTerminalOpen(payload);
+        EventBus.emit("agent:terminal-open", payload);
+        this.focus();
+      }
+      return;
+    }
+
     if (
       !actorId &&
       (kind === "move" || (kind === "down" && e.button === 0)) &&
       !editor.placement &&
       !editor.spawn
     ) {
-      const picked = pickFurnitureSeat(this.ray, this.world.children);
+      const picked = pickedSeat;
       const furnitureHit = picked?.hit;
       const furniture = picked?.owner;
       hoverOwner = furniture ?? null;
@@ -1417,6 +1479,16 @@ export class OfficeRenderer {
       group.name = `generic-object:${object.id}`;
       group.userData.mapObjectId = object.id;
       this.world.add(group);
+      const isWorkstation =
+        object.type === "computer" ||
+        object.type.includes("desk") ||
+        object.type === "studio_worktable";
+      if (isWorkstation) {
+        group.userData.interactiveWorkstation = true;
+        group.userData.workstationCol = object.col;
+        group.userData.workstationRow = object.row;
+        group.userData.workstationType = object.type;
+      }
       if (["room_wall_h", "room_wall_v", "cubicle_wall", "glass_partition"].includes(object.type))
         registerMeetingWalls([group]);
       const type = annexDisplay === "vertical" ? "room_wall_v" : object.type;

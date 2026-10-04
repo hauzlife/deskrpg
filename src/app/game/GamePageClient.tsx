@@ -86,6 +86,11 @@ import {
   type ReportAck,
   type ReportItem,
 } from "@/game/report-queue";
+import {
+  isCommanderEscalation,
+  resolveSquadLead,
+  type NpcRosterItem,
+} from "@/lib/leadership-hierarchy";
 import { decideContextInvite } from "./context-invite-decision";
 import { isLookingAt, needsReadMark } from "./read-marks";
 import { CONVERSATION_READ_EVENT } from "@/lib/read-mark";
@@ -2407,6 +2412,10 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
     [chatResponses, seenResponseFailures],
   );
   const npcReporting = useMemo(() => new Set(reportQueue.map((item) => item.npcId)), [reportQueue]);
+  const reportQueueRef = useRef(reportQueue);
+  useEffect(() => {
+    reportQueueRef.current = reportQueue;
+  }, [reportQueue]);
   const stateRoster = useMemo(
     () => rosterNpcs.map((npc) => ({ id: npc.id, profileName: npc.profile?.profileName ?? null })),
     [rosterNpcs],
@@ -2450,6 +2459,46 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
     }
     return out;
   }, [rosterNpcs, npcMoveStates, npcCallers, socket?.id]);
+
+  const reportSignaturesRef = useRef(reportSignatures);
+  useEffect(() => {
+    reportSignaturesRef.current = reportSignatures;
+  }, [reportSignatures]);
+
+  useEffect(() => {
+    const handleLeadReported = (data: {
+      messageId: string;
+      reportingNpcId: string;
+      leadNpcId: string;
+    }) => {
+      const item = reportQueueRef.current.find((q) => q.messageId === data.messageId);
+      if (item) {
+        acknowledgeReports(item);
+      }
+      setReportingMessageId((current) => (current === data.messageId ? null : current));
+    };
+
+    const handleLeadReportFailed = (data: {
+      messageId: string;
+      reportingNpcId: string;
+    }) => {
+      const sig = reportSignaturesRef.current[data.reportingNpcId] ?? "unknown:none";
+      reportAttemptsRef.current = [
+        ...reportAttemptsRef.current.filter((a) => a.messageId !== data.messageId).slice(-49),
+        { messageId: data.messageId, outcome: "rejected", signature: sig },
+      ];
+      setReportAttemptsVersion((v) => v + 1);
+      setReportingMessageId((current) => (current === data.messageId ? null : current));
+    };
+
+    EventBus.on("npc:lead-reported", handleLeadReported);
+    EventBus.on("npc:lead-report-failed", handleLeadReportFailed);
+
+    return () => {
+      EventBus.off("npc:lead-reported", handleLeadReported);
+      EventBus.off("npc:lead-report-failed", handleLeadReportFailed);
+    };
+  }, [acknowledgeReports]);
 
   useEffect(() => {
     if (!socket || !channelId) return;
@@ -2522,6 +2571,57 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
       ];
       setReportAttemptsVersion((v) => v + 1);
     };
+
+    const isEscalation = isCommanderEscalation(next.cardTitle, next.summary);
+    if (!isEscalation) {
+      const reportingRosterNpc = rosterNpcs.find((n) => n.id === next.npcId);
+      const snapshot = npcMotionSnapshotRef.current;
+      const rosterWithPositions: NpcRosterItem[] = rosterNpcs.map((n) => {
+        const snapNpc = snapshot?.npcs.find((s) => s.npcId === n.id);
+        return {
+          id: n.id,
+          name: n.name,
+          role: n.profile?.profileName || n.name,
+          profileName: n.profile?.profileName || n.name,
+          active: n.active,
+          positionX: snapNpc ? Math.floor(snapNpc.homeX / 16) : 0,
+          positionY: snapNpc ? Math.floor(snapNpc.homeY / 16) : 0,
+        };
+      });
+
+      const lead = reportingRosterNpc
+        ? resolveSquadLead(
+            {
+              id: reportingRosterNpc.id,
+              name: reportingRosterNpc.name,
+              role: reportingRosterNpc.profile?.profileName || reportingRosterNpc.name,
+              profileName: reportingRosterNpc.profile?.profileName || reportingRosterNpc.name,
+              active: reportingRosterNpc.active,
+            },
+            rosterWithPositions,
+          )
+        : null;
+
+      if (lead) {
+        record("sent");
+        setReportingMessageId(next.messageId);
+        EventBus.emit("npc:report-to-lead", {
+          reportingNpcId: next.npcId,
+          leadNpcId: lead.id,
+          cardTitle: next.cardTitle,
+          kind: next.kind,
+          messageId: next.messageId,
+        });
+        return;
+      }
+
+      // Se for relatório de rotina e nenhum líder estiver no mapa, reconhece silenciosamente sem perseguir o jogador
+      record("sent");
+      acknowledgeReports(next);
+      setReportingMessageId(null);
+      return;
+    }
+
     record("sent");
     setReportingMessageId(next.messageId);
     socket.emit(
@@ -2557,6 +2657,7 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
     showCron,
     mode,
     roomViewActive,
+    rosterNpcs,
   ]);
 
   const reportingItem = useMemo(

@@ -54,3 +54,34 @@ export function pickFurnitureSeat(ray: T.Raycaster, roots: T.Object3D[]) {
   )[0];
   return { hit, owner, seat };
 }
+
+export function workstationOwner(object: T.Object3D) {
+  for (let owner: T.Object3D | null = object; owner; owner = owner.parent)
+    if (owner.userData.interactiveWorkstation) return owner;
+  return null;
+}
+
+/** Interactive workstations (desks, computers) may be selected when clicked or hovered directly. */
+export function pickWorkstation(ray: T.Raycaster, roots: T.Object3D[]) {
+  const hits = ray.intersectObjects(roots, true);
+  const hit = hits.find(
+    (entry) => workstationOwner(entry.object) && visibleInTree(entry.object, true),
+  );
+  if (!hit) return null;
+  const owner = workstationOwner(hit.object)!;
+  const blocker = hits.find((entry) => {
+    if (!(entry.object instanceof T.Mesh) || !visibleInTree(entry.object)) return false;
+    if (workstationOwner(entry.object) === owner) return false;
+    if (entry.object.userData.meetingWall) return true;
+    const material = Array.isArray(entry.object.material)
+      ? entry.object.material[entry.face?.materialIndex ?? 0]
+      : entry.object.material;
+    return (
+      material?.visible &&
+      !material.transparent &&
+      !(material instanceof T.MeshPhysicalMaterial && material.transmission > 0)
+    );
+  });
+  if (blocker && blocker.distance < hit.distance - 1e-5) return null;
+  return { hit, owner };
+}

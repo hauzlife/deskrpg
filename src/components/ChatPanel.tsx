@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { ReportItem } from "@/game/report-queue";
 import DialogReportSummary from "./chat/DialogReportSummary";
-import { Pencil, UserMinus, RotateCcw, Undo2 } from "lucide-react";
+import { Pencil, UserMinus, RotateCcw, Undo2, Terminal } from "lucide-react";
+import { EventBus } from "@/game/EventBus";
 import type { NpcChatMessage } from "./NpcDialog";
 import ChatInput from "./ChatInput";
 import type { ChatTaskDraft } from "./kanban/kanban-view-model";
@@ -674,6 +675,20 @@ export default function ChatPanel({
                     {t("npc.return")}
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    EventBus.emit("agent:terminal-open", {
+                      npcId: dialogNpc!.npcId,
+                      npcName: dialogNpc!.npcName,
+                    });
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs font-mono rounded bg-surface-raised hover:brightness-125 text-text-secondary border border-border"
+                  title="Open Agent Terminal (Workstation Console)"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-primary" />
+                  <span className="hidden sm:inline">Terminal</span>
+                </button>
                 <div className="relative">
                   <button
                     onClick={() => setShowGearMenu(!showGearMenu)}

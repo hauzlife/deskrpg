@@ -4,6 +4,7 @@ import * as T from "three";
 import { OfficeRenderer } from "./office-renderer";
 import { FurnitureHighlight } from "./furniture-highlight";
 import { BoardArrival } from "./office-kanban";
+import { batchStaticFurniture } from "./static-batching";
 
 type SeatTarget = { owner: T.Object3D; action: { x: number; z: number } };
 function fixture() {
@@ -33,6 +34,12 @@ function fixture() {
     setCameraMode(mode: "isometric" | "third_person" | "first_person"): void;
     cycleCameraMode(): "isometric" | "third_person" | "first_person";
     onCameraModeChange?: (mode: "isometric" | "third_person" | "first_person") => void;
+    onAgentTerminalOpen?: (data: {
+      npcId: string;
+      npcName: string;
+      col?: number;
+      row?: number;
+    }) => void;
   };
   const seat = new T.Mesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial());
   const board = new T.Mesh(new T.BoxGeometry(2, 2, 0.1), new T.MeshBasicMaterial());
@@ -120,3 +127,129 @@ test("setCameraMode notifies onCameraModeChange", () => {
 
   assert.deepEqual(modes, ["third_person", "first_person", "isometric"]);
 });
+
+test("clicking a workstation desk or computer triggers onAgentTerminalOpen", () => {
+  const { renderer, scene } = fixture();
+  const world = new T.Group();
+  scene.add(world);
+
+  const deskGroup = new T.Group();
+  deskGroup.userData.interactiveWorkstation = true;
+  deskGroup.userData.workstationCol = 5;
+  deskGroup.userData.workstationRow = 14;
+  const deskMesh = new T.Mesh(new T.BoxGeometry(1.8, 0.8, 0.9), new T.MeshBasicMaterial());
+  deskGroup.add(deskMesh);
+  world.add(deskGroup);
+
+  const terminalOpened: Array<{ npcId: string; npcName: string; col?: number; row?: number }> = [];
+  renderer.onAgentTerminalOpen = (data) => terminalOpened.push(data);
+
+  const ray = new T.Raycaster();
+  ray.ray.origin.set(0, 5, 0);
+  ray.ray.direction.set(0, -1, 0);
+
+  const hostEl = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) };
+  const domElement = { style: {}, title: "" };
+
+  const camera = new T.PerspectiveCamera(50, 1, 0.1, 1000);
+  camera.position.set(0, 10, 0);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+
+  Object.assign(renderer, {
+    world,
+    ray,
+    camera,
+    host: hostEl,
+    renderer: { domElement },
+    actors: new Map(),
+    bridge: {
+      editor() {
+        return { placement: false, spawn: false };
+      },
+    },
+    lastActors: [
+      {
+        id: "npc-hermes-1",
+        name: "Dante",
+        kind: "npc",
+        x: (5 + 0.5) * 32,
+        y: (14 + 0.5) * 32,
+      },
+    ],
+    setSelectedSeat: () => {},
+    setHoveredSeat: () => {},
+    focus: () => {},
+  });
+
+  (renderer as any).point({ clientX: 50, clientY: 50, button: 0 } as PointerEvent, "down");
+
+  assert.equal(terminalOpened.length, 1);
+  assert.equal(terminalOpened[0].npcId, "npc-hermes-1");
+  assert.equal(terminalOpened[0].npcName, "Dante");
+  assert.equal(terminalOpened[0].col, 5);
+  assert.equal(terminalOpened[0].row, 14);
+});
+
+test("workstation meshes survive batchStaticFurniture and remain clickable", () => {
+  const { renderer, scene } = fixture();
+  const world = new T.Group();
+  scene.add(world);
+
+  const deskGroup = new T.Group();
+  deskGroup.userData.interactiveWorkstation = true;
+  deskGroup.userData.workstationCol = 2;
+  deskGroup.userData.workstationRow = 3;
+  const deskMat = new T.MeshStandardMaterial({ color: "#8b5a2b" });
+  const deskMesh = new T.Mesh(new T.BoxGeometry(1.8, 0.8, 0.9), deskMat);
+  deskGroup.add(deskMesh);
+  world.add(deskGroup);
+
+  // Run batchStaticFurniture on the world
+  batchStaticFurniture(world, true, { vertexColors: true, batchSeats: true });
+
+  // Verify deskMesh was NOT removed from deskGroup
+  assert.equal(deskMesh.parent, deskGroup);
+  assert.equal(deskGroup.children.length, 1);
+
+  const terminalOpened: Array<{ npcId: string; npcName: string }> = [];
+  renderer.onAgentTerminalOpen = (data) => terminalOpened.push(data);
+
+  const ray = new T.Raycaster();
+  ray.ray.origin.set(0, 5, 0);
+  ray.ray.direction.set(0, -1, 0);
+
+  const domElement = { style: {} as Record<string, string>, title: "" };
+  const camera = new T.PerspectiveCamera(50, 1, 0.1, 1000);
+  camera.position.set(0, 10, 0);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+
+  Object.assign(renderer, {
+    world,
+    ray,
+    camera,
+    host: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }) },
+    renderer: { domElement },
+    actors: new Map(),
+    bridge: {
+      editor: () => ({ placement: false, spawn: false }),
+    },
+    lastActors: [{ id: "agent-1", name: "Agent 1", kind: "npc", x: 2.5 * 32, y: 3.5 * 32 }],
+    setSelectedSeat: () => {},
+    setHoveredSeat: () => {},
+    focus: () => {},
+  });
+
+  // Hover test
+  (renderer as any).point({ clientX: 50, clientY: 50 } as PointerEvent, "move");
+  assert.equal(domElement.style.cursor, "pointer");
+  assert.match(domElement.title, /Workstation Terminal/);
+
+  // Click test
+  (renderer as any).point({ clientX: 50, clientY: 50, button: 0 } as PointerEvent, "down");
+  assert.equal(terminalOpened.length, 1);
+  assert.equal(terminalOpened[0].npcId, "agent-1");
+  assert.equal(terminalOpened[0].npcName, "Agent 1");
+});
+

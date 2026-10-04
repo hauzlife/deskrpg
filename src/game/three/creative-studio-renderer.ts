@@ -354,6 +354,16 @@ export function addCreativeStudioScene(
   scene.userData.meetingWalls = architecture.userData.meetingWalls;
   for (const object of map.objects) {
     const host = new T.Group();
+    const isWorkstation =
+      object.type === "computer" ||
+      object.type.includes("desk") ||
+      object.type === "studio_worktable";
+    if (isWorkstation) {
+      host.userData.interactiveWorkstation = true;
+      host.userData.workstationCol = object.col;
+      host.userData.workstationRow = object.row;
+      host.userData.workstationType = object.type;
+    }
     if (renderCreativeStudioObject(host, object, map.objects, options)) {
       scene.add(host);
       loads.push(host.userData.assetReady);
