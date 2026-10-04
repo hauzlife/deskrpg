@@ -2876,7 +2876,7 @@ export class OfficeSimulation {
       const visitSeats =
         npc.ambientSchedule.phase === "roam" &&
         !npc.ambientSchedule.visitedSeat &&
-        Math.random() < 0.6;
+        Math.random() < 0.5;
       const destinations =
         npc.ambientSchedule.phase === "home"
           ? [home]
@@ -2893,6 +2893,32 @@ export class OfficeSimulation {
           [publicSeats[i], publicSeats[j]] = [publicSeats[j], publicSeats[i]];
         }
         destinations.unshift(...publicSeats);
+      }
+      // Colleague consultation: intentionally walk over to a teammate's desk to collaborate and trigger smalltalk
+      if (npc.ambientSchedule.phase === "roam") {
+        const coworkers = this.npcs.filter(
+          (other) => other.id !== npc.id && !other.ambientPaused && other.moveState === "idle",
+        );
+        if (coworkers.length > 0) {
+          const colleague = coworkers[Math.floor(Math.random() * coworkers.length)];
+          const cx = Math.floor(colleague.pixelX / TILE_SIZE);
+          const cy = Math.floor(colleague.pixelY / TILE_SIZE);
+          const neighbors = [
+            { x: cx + 1, y: cy },
+            { x: cx - 1, y: cy },
+            { x: cx, y: cy + 1 },
+            { x: cx, y: cy - 1 },
+          ].filter(
+            (p) =>
+              (p.x !== sx || p.y !== sy) &&
+              walkable(p.x, p.y) &&
+              destinationFree(p.x, p.y) &&
+              ambientTileAllowed(this.ambientZones, p.x, p.y),
+          );
+          if (neighbors.length > 0) {
+            destinations.unshift(...neighbors);
+          }
+        }
       }
       // Limit A* per pass; if this random batch cannot reach, try again later.
       for (const destination of destinations.slice(0, 12)) {

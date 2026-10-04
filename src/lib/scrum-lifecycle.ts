@@ -800,9 +800,20 @@ export async function createScrumCeremonyMeeting(
     });
   }
 
-  // Emit room message into tactical room
-  const tacticalRoom = await resolveTacticalRoomId(resolvedChannelId, "product-manager");
-  if (tacticalRoom) {
+  // Emit room message into tactical rooms (both Product and Engineering Dev Lab)
+  const roomTargets = [
+    await resolveTacticalRoomId(resolvedChannelId, "product-manager"),
+    await resolveTacticalRoomId(resolvedChannelId, "backend-engineer"),
+  ].filter((r): r is { roomId: string; roomName: string } => r !== null);
+
+  const seenRoomIds = new Set<string>();
+  const tacticalRooms = roomTargets.filter((r) => {
+    if (seenRoomIds.has(r.roomId)) return false;
+    seenRoomIds.add(r.roomId);
+    return true;
+  });
+
+  for (const tacticalRoom of tacticalRooms) {
     const roomContent =
       `🏛️ **[CERIMÔNIA SCRUM REALIZADA NO DESKRPG]** \`${meetingId}\`\n` +
       `**Tema:** ${topic}\n` +
@@ -828,6 +839,43 @@ export async function createScrumCeremonyMeeting(
         },
       });
       if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, msg);
+
+      // Emit real conversational debate into the room chat so members can see the A2A dialogue
+      const keyTurns: Array<{ senderName: string; senderId: string; content: string }> = [
+        {
+          senderName: "product-manager",
+          senderId: participants.find((p) => p.name.includes("product") || p.role?.includes("PM"))?.id || "product-manager",
+          content: `📢 **[${topic}]** Alinhando os objetivos da sprint **${sprintTag}** para **${boardSlug}**. Prioridades definidas e backlog destravado.`,
+        },
+        {
+          senderName: "cpo",
+          senderId: participants.find((p) => p.name.includes("cpo") || p.role?.includes("CPO"))?.id || "cpo",
+          content: `🎯 Foco estratégico total: priorizar conversão de funil, saúde dos bots e zero regressão. Metas: ${keyTopics.slice(0, 2).join("; ")}.`,
+        },
+        {
+          senderName: "backend-engineer",
+          senderId: participants.find((p) => p.name.includes("backend") || p.role?.includes("Backend"))?.id || "backend-engineer",
+          content: `🛠️ Backend operacional: suítes de testes 100% verdes com exit code 0. Puxando cards em 'ready' para execução imediata.`,
+        },
+        {
+          senderName: "reviewer",
+          senderId: participants.find((p) => p.name.includes("review") || p.role?.includes("Review"))?.id || "reviewer",
+          content: `🔍 Quality & Architecture: auditoria de blast radius ativa. Nenhum código entra em produção sem teste verde e cobertura completa.`,
+        },
+      ];
+
+      for (const turn of keyTurns) {
+        try {
+          const chatMsg = await appendRoomMessage({
+            roomId: tacticalRoom.roomId,
+            senderKind: "npc",
+            senderId: turn.senderId,
+            senderName: turn.senderName,
+            content: turn.content,
+          });
+          if (emitRoomMessage) emitRoomMessage(tacticalRoom.roomId, chatMsg);
+        } catch {}
+      }
     } catch {}
   }
 

@@ -1337,9 +1337,27 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
     const handleNpcAutoGreet = (data: { npcId: string; npcName: string }) => {
       const greeting = t("game.npcGreeting", { name: data.npcName });
       npcGreetings.current.set(data.npcId, greeting);
+      const isWorking = !!npcWorking[data.npcId]?.working;
+      const lower = `${data.npcId} ${data.npcName}`.toLowerCase();
+      let bubbleText = t("game.npcGreetingBubble");
+      if (isWorking) {
+        bubbleText = "Trabalhando ativamente nas tasks do Kanban!";
+      } else if (lower.includes("pm") || lower.includes("product")) {
+        bubbleText = "Alinhando prioridades da sprint e o backlog.";
+      } else if (lower.includes("review")) {
+        bubbleText = "Auditando PRs, blast radius e testes.";
+      } else if (lower.includes("qa") || lower.includes("test")) {
+        bubbleText = "Validando cenários de testes e integrações E2E.";
+      } else if (lower.includes("sre") || lower.includes("devops")) {
+        bubbleText = "Monitorando métricas e SLIs no Grafana.";
+      } else if (lower.includes("backend") || lower.includes("dev")) {
+        bubbleText = "Implementando lógica de negócio e testes unitários.";
+      } else if (lower.includes("cpo") || lower.includes("lead")) {
+        bubbleText = "Garantindo alinhamento estratégico e conversão.";
+      }
       EventBus.emit("npc:bubble", {
         npcId: data.npcId,
-        text: t("game.npcGreetingBubble"),
+        text: bubbleText,
         durationMs: 4500,
       });
       showToastNotification(

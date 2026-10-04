@@ -167,7 +167,11 @@ export async function checkAndTriggerScrumCeremonies(
   currentDate: Date = new Date(),
   options: CheckScheduleOptions = {},
 ): Promise<Array<{ type: ScrumCeremonyType; meetingId: string; topic: string }>> {
-  const { boardSlug = "hot-telegram", channelId = "c_general", force = false } = options;
+  const {
+    boardSlug = "hot-telegram",
+    channelId = "104c62be-838c-48ad-8351-368b1493a304",
+    force = false,
+  } = options;
   const dateKey = formatDateKey(currentDate);
   const sprintTag = getSprintTagForDate(currentDate);
   const triggered: Array<{ type: ScrumCeremonyType; meetingId: string; topic: string }> = [];
