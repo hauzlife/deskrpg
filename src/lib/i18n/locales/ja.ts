@@ -3885,7 +3885,10 @@ const ja: Record<string, string> = {
   "game.camera.zoomIn": "拡大",
   "game.camera.zoomOut": "縮小",
   "game.camera.movementHint":
-    "クリック: 歩く · ドラッグ: 画面移動 · 右ドラッグ: 回転 · ホイール: 拡大/縮小",
+    "WASD / 矢印キー: 歩く · V: カメラモード · ドラッグ: 画面移動 · ホイール: 拡大/縮小",
+  "game.camera.mode.isometric": "立体ビュー",
+  "game.camera.mode.third_person": "三人称視点",
+  "game.camera.mode.first_person": "一人称視点",
   "lookbook.collectionLabel": "オフィスキャラクターコレクション",
   "lookbook.title": "一緒に働きたい顔ぶれ",
   "lookbook.intro": "それぞれの好み、それぞれの物語。あなたのオフィスに合う一人を選んでください。",

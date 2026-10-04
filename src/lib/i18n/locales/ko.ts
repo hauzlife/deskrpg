@@ -3848,7 +3848,10 @@ const ko: Record<string, string> = {
   "game.camera.zoomIn": "확대",
   "game.camera.zoomOut": "축소",
   "game.camera.movementHint":
-    "클릭: 걷기 · 드래그: 화면 이동 · 우클릭 드래그: 회전 · 휠: 확대/축소",
+    "WASD / 방향키: 걷기 · V: 카메라 모드 · 드래그: 화면 이동 · 휠: 확대/축소",
+  "game.camera.mode.isometric": "입체 시점",
+  "game.camera.mode.third_person": "3인칭 시점",
+  "game.camera.mode.first_person": "1인칭 시점",
   "lookbook.collectionLabel": "오피스 캐릭터 컬렉션",
   "lookbook.title": "함께 일하고 싶은 얼굴들",
   "lookbook.intro": "각자의 취향, 각자의 이야기. 당신의 오피스에 어울리는 한 사람을 골라보세요.",

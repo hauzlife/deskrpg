@@ -17,6 +17,8 @@ function fixture() {
     hoveredSeat: null,
     selectedSeat: null,
     meetingCamera: { active: false },
+    cameraMode: "isometric",
+    following: true,
   }) as {
     hoveredSeat: SeatTarget | null;
     selectedSeat: SeatTarget | null;
@@ -27,6 +29,10 @@ function fixture() {
     enterMeeting(): boolean;
     point(event: PointerEvent, kind: "down"): void;
     meetingCamera: { active: boolean };
+    getCameraMode(): "isometric" | "third_person" | "first_person";
+    setCameraMode(mode: "isometric" | "third_person" | "first_person"): void;
+    cycleCameraMode(): "isometric" | "third_person" | "first_person";
+    onCameraModeChange?: (mode: "isometric" | "third_person" | "first_person") => void;
   };
   const seat = new T.Mesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial());
   const board = new T.Mesh(new T.BoxGeometry(2, 2, 0.1), new T.MeshBasicMaterial());
@@ -87,4 +93,30 @@ test("new board clicks are blocked while moving into a meeting, and released aft
   renderer.point({ button: 0 } as PointerEvent, "down");
   renderer.setMeetingEntryState("cancelled");
   assert.throws(() => renderer.point({ button: 0 } as PointerEvent, "down"), /board input reached/);
+});
+
+test("camera mode cycles between isometric -> third_person -> first_person -> isometric", () => {
+  const { renderer } = fixture();
+  assert.equal(renderer.getCameraMode(), "isometric");
+
+  assert.equal(renderer.cycleCameraMode(), "third_person");
+  assert.equal(renderer.getCameraMode(), "third_person");
+
+  assert.equal(renderer.cycleCameraMode(), "first_person");
+  assert.equal(renderer.getCameraMode(), "first_person");
+
+  assert.equal(renderer.cycleCameraMode(), "isometric");
+  assert.equal(renderer.getCameraMode(), "isometric");
+});
+
+test("setCameraMode notifies onCameraModeChange", () => {
+  const { renderer } = fixture();
+  const modes: string[] = [];
+  renderer.onCameraModeChange = (mode) => modes.push(mode);
+
+  renderer.setCameraMode("third_person");
+  renderer.setCameraMode("first_person");
+  renderer.setCameraMode("isometric");
+
+  assert.deepEqual(modes, ["third_person", "first_person", "isometric"]);
 });

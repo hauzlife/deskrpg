@@ -52,8 +52,12 @@ import { resolveOfficeLook } from "./office-looks";
 import { isOfficeEnvironmentId } from "./office-environment-theme";
 import * as T from "three";
 import { EventBus } from "../EventBus";
+import { isTypingTarget } from "../input-guard";
+
+export type CameraViewMode = "isometric" | "third_person" | "first_person";
 import { addOfficeDetails } from "./office-details";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 import { createActor, round, sphere, cylinder } from "./characters";
 import {
   actorIndicator,
@@ -185,6 +189,13 @@ export class OfficeRenderer {
   private disposed = false;
   private theme: OfficeTheme = "office";
   private following = true;
+  private cameraMode: CameraViewMode = "isometric";
+  public onCameraModeChange?: (mode: CameraViewMode) => void;
+  private pointerLock?: PointerLockControls;
+  private lastPlayerWorldPos: { x: number; z: number } | null = null;
+  private isPointerDownOnCanvas = false;
+  private lastDragX = 0;
+  private lastDragY = 0;
   private overviewDimensions: { cols: number; rows: number } | null = null;
   private lastMap = "";
   private lastMapStructure = "";
@@ -196,6 +207,13 @@ export class OfficeRenderer {
   private boardArrival = new BoardArrival();
   private meetingEntryWalking = false;
   private furnitureHighlight = new FurnitureHighlight();
+  private handleViewModeKey = (e: KeyboardEvent) => {
+    if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+    if (e.key === "v" || e.key === "V" || e.code === "KeyV") {
+      e.preventDefault();
+      this.cycleCameraMode();
+    }
+  };
   private cancelBoardKey = (e: KeyboardEvent) => {
     if (
       ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "escape"].includes(
@@ -300,6 +318,15 @@ export class OfficeRenderer {
     this.controls.addEventListener("start", this.stopFollowing);
     this.controls.addEventListener("start", this.cameraInteractionStart);
     this.controls.addEventListener("end", this.cameraInteractionEnd);
+    this.pointerLock = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.pointerLock.addEventListener("lock", () => {
+      this.host.classList.add("pointer-locked");
+      EventBus.emit("camera:pointer-lock", { locked: true });
+    });
+    this.pointerLock.addEventListener("unlock", () => {
+      this.host.classList.remove("pointer-locked");
+      EventBus.emit("camera:pointer-lock", { locked: false });
+    });
     this.meetingCamera = new MeetingCamera(this.camera, this.controls, {
       reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     });
@@ -338,6 +365,7 @@ export class OfficeRenderer {
     this.resize.observe(host);
     document.addEventListener("visibilitychange", this.benchmarkVisibility);
     document.addEventListener("keydown", this.cancelBoardKey);
+    document.addEventListener("keydown", this.handleViewModeKey);
     this.scene.add(this.furnitureHighlight.group);
     this.tick(0);
   }
@@ -461,6 +489,89 @@ export class OfficeRenderer {
     } else {
       this.renderer.setClearColor(this.themeMode === "dark" ? "#090c12" : palettes.office.outside);
     }
+  }
+  getCameraMode(): CameraViewMode {
+    return this.cameraMode;
+  }
+  setCameraMode(mode: CameraViewMode) {
+    if (this.meetingCamera.active) return;
+    const prevMode = this.cameraMode;
+    this.cameraMode = mode;
+    const player = this.lastActors?.find((a) => a.kind === "player");
+    const p = player ? pixelToWorld(player.x, player.y) : { x: 15, z: 12 };
+
+    if (mode === "first_person") {
+      if (this.controls) this.controls.enabled = false;
+      this.following = true;
+      this.overviewDimensions = null;
+      if (this.camera) {
+        this.camera.position.set(p.x, 1.35, p.z);
+        if (prevMode === "isometric") {
+          const renderedPlayer = player ? this.actors?.get(player.id) : null;
+          const fallbackYaw = player
+            ? { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 }[player.direction] ?? 0
+            : 0;
+          const yaw = renderedPlayer?.yaw ?? fallbackYaw;
+          const euler = new T.Euler(0, yaw, 0, "YXZ");
+          this.camera.quaternion.setFromEuler(euler);
+        }
+      }
+    } else if (mode === "third_person") {
+      if (this.pointerLock?.isLocked) this.pointerLock.unlock();
+      if (this.controls) {
+        this.controls.enabled = true;
+        this.controls.mouseButtons = {
+          LEFT: T.MOUSE.ROTATE,
+          MIDDLE: T.MOUSE.DOLLY,
+          RIGHT: T.MOUSE.ROTATE,
+        };
+        this.controls.touches = { ONE: T.TOUCH.ROTATE, TWO: T.TOUCH.DOLLY_PAN };
+        this.controls.minDistance = 1.5;
+        this.controls.maxDistance = 25;
+        this.controls.maxPolarAngle = Math.PI * 0.48;
+        this.controls.minPolarAngle = 0.05;
+
+        const target = new T.Vector3(p.x, 1.1, p.z);
+        if (prevMode !== "third_person") {
+          const renderedPlayer = player ? this.actors?.get(player.id) : null;
+          const fallbackYaw = player
+            ? { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 }[player.direction] ?? 0
+            : 0;
+          const yaw = renderedPlayer?.yaw ?? fallbackYaw;
+          this.controls.target.copy(target);
+          if (this.camera) {
+            this.camera.position.set(p.x - Math.sin(yaw) * 4, 1.1 + 1.8, p.z - Math.cos(yaw) * 4);
+          }
+        }
+      }
+      this.following = true;
+      this.overviewDimensions = null;
+    } else {
+      // Isometric mode
+      if (this.pointerLock?.isLocked) this.pointerLock.unlock();
+      if (this.controls) {
+        this.controls.enabled = true;
+        this.controls.mouseButtons = {
+          LEFT: T.MOUSE.PAN,
+          MIDDLE: T.MOUSE.PAN,
+          RIGHT: T.MOUSE.ROTATE,
+        };
+        this.controls.touches = { ONE: T.TOUCH.PAN, TWO: T.TOUCH.DOLLY_ROTATE };
+        this.controls.minDistance = 8;
+        this.controls.maxDistance = 85;
+        this.controls.maxPolarAngle = Math.PI * 0.46;
+        this.controls.minPolarAngle = 0.15;
+      }
+    }
+    this.lastPlayerWorldPos = { x: p.x, z: p.z };
+    this.onCameraModeChange?.(this.cameraMode);
+  }
+  cycleCameraMode(): CameraViewMode {
+    if (this.meetingCamera.active) return this.cameraMode;
+    const order: CameraViewMode[] = ["isometric", "third_person", "first_person"];
+    const next = order[(order.indexOf(this.cameraMode) + 1) % order.length];
+    this.setCameraMode(next);
+    return next;
   }
   focus() {
     if (this.meetingCamera.active) return;
@@ -624,8 +735,10 @@ export class OfficeRenderer {
     this.onMeetingCameraChange?.(this.meetingCameraState());
   }
   private stopFollowing = () => {
-    this.following = false;
-    this.overviewDimensions = null;
+    if (this.cameraMode === "isometric") {
+      this.following = false;
+      this.overviewDimensions = null;
+    }
     this.setHoveredSeat(null);
   };
   private setHoveredSeat(target: SeatVisualTarget | null) {
@@ -681,13 +794,26 @@ export class OfficeRenderer {
     this.gesture.start(e);
     if (e.isPrimary && (e.button === 0 || e.button === 2))
       this.renderer.domElement.setPointerCapture(e.pointerId);
+
+    if (this.cameraMode === "first_person") {
+      this.isPointerDownOnCanvas = true;
+      this.lastDragX = e.clientX;
+      this.lastDragY = e.clientY;
+      if (e.button === 0 && this.pointerLock && !this.pointerLock.isLocked) {
+        this.pointerLock.lock();
+      }
+    }
   };
   private pointerUp = (e: PointerEvent) => {
-    if (this.gesture.finish(e)) this.point(e, "down");
+    this.isPointerDownOnCanvas = false;
+    if (this.cameraMode !== "first_person" || !this.pointerLock?.isLocked) {
+      if (this.gesture.finish(e)) this.point(e, "down");
+    }
     if (this.renderer.domElement.hasPointerCapture(e.pointerId))
       this.renderer.domElement.releasePointerCapture(e.pointerId);
   };
   private pointerCancel = () => {
+    this.isPointerDownOnCanvas = false;
     this.pendingMove = null;
     this.gesture.cancel();
   };
@@ -712,6 +838,22 @@ export class OfficeRenderer {
   private pointerMove = (e: PointerEvent) => {
     // The gesture (click or drag) must be checked per event to be accurate, and it is cheap.
     this.gesture.move(e);
+    if (
+      this.cameraMode === "first_person" &&
+      this.isPointerDownOnCanvas &&
+      !this.pointerLock?.isLocked
+    ) {
+      const deltaX = e.clientX - this.lastDragX;
+      const deltaY = e.clientY - this.lastDragY;
+      this.lastDragX = e.clientX;
+      this.lastDragY = e.clientY;
+      const euler = new T.Euler(0, 0, 0, "YXZ");
+      euler.setFromQuaternion(this.camera.quaternion);
+      euler.y -= deltaX * 0.003;
+      euler.x -= deltaY * 0.003;
+      euler.x = Math.max(-Math.PI * 0.48, Math.min(Math.PI * 0.48, euler.x));
+      this.camera.quaternion.setFromEuler(euler);
+    }
     if (this.cameraInteracting) return;
     this.pendingMove = e;
   };
@@ -1581,12 +1723,53 @@ export class OfficeRenderer {
         )
       )
         this.onKanbanOpen();
-      if (!this.meetingCamera.active && this.following && player) {
-        const p = pixelToWorld(player.x, player.y),
-          target = new T.Vector3(p.x, 0, p.z);
-        const offset = target.sub(this.controls.target).multiplyScalar(0.08);
-        this.controls.target.add(offset);
-        this.camera.position.add(offset);
+      if (!this.meetingCamera.active && player) {
+        if (player.walking && this.cameraMode === "isometric" && !this.following) {
+          this.following = true;
+        }
+        const p = pixelToWorld(player.x, player.y);
+        const lastP = this.lastPlayerWorldPos ?? p;
+        const dx = p.x - lastP.x;
+        const dz = p.z - lastP.z;
+        this.lastPlayerWorldPos = { x: p.x, z: p.z };
+
+        if (this.cameraMode === "first_person") {
+          this.camera.position.set(p.x, 1.35, p.z);
+          const dir = new T.Vector3();
+          this.camera.getWorldDirection(dir);
+          dir.y = 0;
+          dir.normalize();
+          EventBus.emit("camera:heading", {
+            forwardX: dir.x,
+            forwardZ: dir.z,
+            mode: "first_person",
+          });
+        } else if (this.cameraMode === "third_person") {
+          this.controls.target.x += dx;
+          this.controls.target.z += dz;
+          this.controls.target.y = 1.1;
+          this.camera.position.x += dx;
+          this.camera.position.z += dz;
+
+          const dir = new T.Vector3().subVectors(this.controls.target, this.camera.position);
+          dir.y = 0;
+          dir.normalize();
+          EventBus.emit("camera:heading", {
+            forwardX: dir.x,
+            forwardZ: dir.z,
+            mode: "third_person",
+          });
+        } else if (this.following) {
+          const target = new T.Vector3(p.x, 0, p.z);
+          const offset = target.sub(this.controls.target).multiplyScalar(0.08);
+          this.controls.target.add(offset);
+          this.camera.position.add(offset);
+          EventBus.emit("camera:heading", {
+            forwardX: 0,
+            forwardZ: -1,
+            mode: "isometric",
+          });
+        }
       }
       this.controls.update();
       this.meetingCamera.update(
@@ -1617,6 +1800,10 @@ export class OfficeRenderer {
         }
         const { model, label, name, bubble } = rendered,
           p = pixelToWorld(actor.x, actor.y);
+        const isLocalPlayer = actor.id === player?.id;
+        const hideInFirstPerson = isLocalPlayer && this.cameraMode === "first_person";
+        model.root.visible = !hideInFirstPerson;
+        label.style.visibility = hideInFirstPerson ? "hidden" : "";
         const seat = seatAt(this.seats, p.x, p.z, actor.walking);
         model.root.position.set(seat?.x ?? p.x, seat?.elevation ?? 0, seat?.z ?? p.z);
         const previous = rendered.previous;
@@ -1687,7 +1874,11 @@ export class OfficeRenderer {
             ),
           };
         }
+        const isFirstPersonLocal =
+          this.cameraMode === "first_person" && actor.kind === "player";
+        model.root.visible = !isFirstPersonLocal;
         const visible =
+          !isFirstPersonLocal &&
           !(isCreativeStudioMap(this.bridge.map()) && rendered.labelOcclusion?.hidden) &&
           screen.z >= -1 &&
           screen.z <= 1 &&
@@ -1851,6 +2042,7 @@ export class OfficeRenderer {
     this.onMeetingCameraChange = undefined;
     this.cancelBenchmark("Renderer disposed");
     document.removeEventListener("keydown", this.cancelBoardKey);
+    document.removeEventListener("keydown", this.handleViewModeKey);
     this.boardArrival.cancel();
     this.furnitureHighlight.dispose();
     document.removeEventListener("visibilitychange", this.benchmarkVisibility);
@@ -1860,6 +2052,7 @@ export class OfficeRenderer {
     cancelAnimationFrame(this.frame);
     this.resize.disconnect();
     this.bridge?.setPresentation(false);
+    this.pointerLock?.dispose();
     this.controls.dispose();
     this.controls.removeEventListener("start", this.cameraInteractionStart);
     this.controls.removeEventListener("end", this.cameraInteractionEnd);

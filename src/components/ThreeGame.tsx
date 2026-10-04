@@ -11,9 +11,12 @@ import {
   Box,
   LayoutGrid,
   LogOut,
+  Camera,
+  Eye,
+  User,
 } from "lucide-react";
 import { EventBus, setPendingChannelData, type PendingChannelData } from "@/game/EventBus";
-import { OfficeRenderer } from "@/game/three/office-renderer";
+import { OfficeRenderer, type CameraViewMode } from "@/game/three/office-renderer";
 import type { OfficeBridge } from "@/game/three/bridge";
 import type { OfficeSimulation } from "@/game/simulation/office-simulation";
 import { useLocale, useT } from "@/lib/i18n";
@@ -46,6 +49,8 @@ export default function ThreeGame(props: ThreeGameProps) {
     bridge = useRef<OfficeBridge | null>(null);
   const [failed, setFailed] = useState(false);
   const [meetingCamera, setMeetingCamera] = useState({ active: false, automatic: true });
+  const [cameraMode, setCameraMode] = useState<CameraViewMode>("isometric");
+  const [isPointerLocked, setIsPointerLocked] = useState(false);
   const [insideMeeting, setInsideMeeting] = useState(false);
   const [availability, setAvailability] = useState<{ channelId: string; active: boolean } | null>(
     null,
@@ -144,6 +149,7 @@ export default function ThreeGame(props: ThreeGameProps) {
       setMeetingCamera(state);
       if (interrupted) EventBus.emit("meeting:join-failed", { reasonCode: "map_unavailable" });
     };
+    view.onCameraModeChange = (mode) => setCameraMode(mode);
     view.configureMeetingCamera({
       reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
       ...loadMeetingCameraPrefs(),
@@ -242,6 +248,16 @@ export default function ThreeGame(props: ThreeGameProps) {
     EventBus.emit("channel-data-ready", channelInitData);
   }, [channelInitData]);
 
+  useEffect(() => {
+    const handlePointerLock = (payload: { locked: boolean }) => {
+      setIsPointerLocked(payload.locked);
+    };
+    EventBus.on("camera:pointer-lock", handlePointerLock);
+    return () => {
+      EventBus.off("camera:pointer-lock", handlePointerLock);
+    };
+  }, []);
+
   // If the socket becomes ready after the simulation, hand it over then
   useEffect(() => {
     if (!socket) return;
@@ -260,6 +276,7 @@ export default function ThreeGame(props: ThreeGameProps) {
         <>
           <div ref={host} className="office-three-canvas" />
           <div ref={labels} className="office-actor-labels" />
+          {cameraMode === "first_person" && <div className="office-crosshair" />}
           <div className="office-camera-tools" aria-label={t("game.camera.controls")}>
             {meetingCamera.active && (
               <button
@@ -325,6 +342,22 @@ export default function ThreeGame(props: ThreeGameProps) {
             </button>
             <button
               type="button"
+              onClick={() => renderer.current?.cycleCameraMode()}
+              disabled={meetingCamera.active}
+              title={`${t(`game.camera.mode.${cameraMode}`)} (V)`}
+              aria-label={`${t(`game.camera.mode.${cameraMode}`)} (V)`}
+              className={cameraMode !== "isometric" ? "text-primary font-bold" : ""}
+            >
+              {cameraMode === "first_person" ? (
+                <Eye size={17} />
+              ) : cameraMode === "third_person" ? (
+                <User size={17} />
+              ) : (
+                <Camera size={17} />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => renderer.current?.zoom(0.8)}
               disabled={meetingCamera.active}
               aria-label={t("game.camera.zoomIn")}
@@ -345,7 +378,15 @@ export default function ThreeGame(props: ThreeGameProps) {
             />
           </div>
           <div className="office-movement-hint" data-meeting={meetingCamera.active || undefined}>
-            {meetingCamera.active ? t("meeting.rotationHint") : t("game.camera.movementHint")}
+            {meetingCamera.active
+              ? t("meeting.rotationHint")
+              : cameraMode === "first_person"
+                ? isPointerLocked
+                  ? "WASD: walk · Mouse: look · ESC: unlock cursor"
+                  : "Click canvas to lock mouse (FPS) · WASD: walk · Drag: look"
+                : cameraMode === "third_person"
+                  ? "WASD: walk forward/back/strafe · Drag: orbit · Scroll: zoom"
+                  : t("game.camera.movementHint")}
           </div>
           {meetingCamera.active && (
             <button

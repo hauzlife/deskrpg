@@ -714,9 +714,9 @@ export default function TaskDrawer({
                       <div className="mt-1 text-text-secondary break-words">{diag.detail}</div>
                       {diag.actions.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
-                          {diag.actions.map((action) => (
+                          {diag.actions.map((action, actionIdx) => (
                             <span
-                              key={action.kind}
+                              key={`${action.kind}-${actionIdx}-${action.label}`}
                               className="rounded bg-surface-raised px-1.5 py-0.5 text-[10px] text-text-secondary"
                             >
                               {action.label}
@@ -1151,8 +1151,8 @@ function RunProvenanceList({ made }: { made: ReturnType<typeof runProvenance> })
         <div data-run-provenance="limitations">
           <span className="text-text-dim">{t("kanban.run.made.limitations")}</span>
           <ul className="list-disc pl-4 text-text-secondary break-words">
-            {made.limitations.map((line) => (
-              <li key={line}>{line}</li>
+            {made.limitations.map((line, lineIdx) => (
+              <li key={`${line}-${lineIdx}`}>{line}</li>
             ))}
           </ul>
         </div>

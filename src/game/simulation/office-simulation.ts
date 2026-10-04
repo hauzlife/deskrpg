@@ -97,16 +97,29 @@ import {
 
 type PlayerBody = { x: number; y: number };
 
-/** Do not intercept game keys when an input box or editable element has focus. */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el.isContentEditable;
-}
+import { isTypingTarget } from "../input-guard";
+export { isTypingTarget };
 
-/** Keys the old game loop intercepted in the browser. Arrows (scrolling) and slash (Firefox quick find). */
-const CAPTURED_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]);
+/** Keys the game loop intercepts in the browser: Arrows, WASD, space and slash. */
+const CAPTURED_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  " ",
+  "w",
+  "W",
+  "a",
+  "A",
+  "s",
+  "S",
+  "d",
+  "D",
+  "KeyW",
+  "KeyA",
+  "KeyS",
+  "KeyD",
+]);
 
 type PendingNpcCall = {
   npcId: string;
@@ -138,6 +151,7 @@ export class OfficeSimulation {
   private eventScope = createEventScope();
   private keysDown = new Set<string>();
   private justPressed = new Set<string>();
+  private cameraHeading: { forwardX: number; forwardZ: number; mode: string } | null = null;
 
   // ---------------------------------------------------------------------------
   // Meetings
@@ -495,6 +509,12 @@ export class OfficeSimulation {
     this.eventScope.on("meeting:cancel-entry", () => this.cancelMeetingEntry());
     this.eventScope.on("meeting:mode", (payload: { active: boolean }) =>
       this.setMeetingMode(payload.active),
+    );
+    this.eventScope.on(
+      "camera:heading",
+      (heading: { forwardX: number; forwardZ: number; mode: string }) => {
+        this.cameraHeading = heading;
+      },
     );
     this.meetingSpace = undefined;
     this.officeEnvironment = undefined;
@@ -1685,10 +1705,16 @@ export class OfficeSimulation {
 
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (isTypingTarget(event.target) || isTypingTarget(document.activeElement)) return;
-    if (CAPTURED_KEYS.has(event.key) || event.code === "Slash") event.preventDefault();
+    if (
+      CAPTURED_KEYS.has(event.key) ||
+      CAPTURED_KEYS.has(event.code) ||
+      event.code === "Slash"
+    )
+      event.preventDefault();
     const key = event.code === "Slash" ? "Slash" : event.key;
     if (!this.keysDown.has(key)) this.justPressed.add(key);
     this.keysDown.add(key);
+    if (event.code) this.keysDown.add(event.code);
     if (event.key === "Escape") {
       if (this.placementMode) EventBus.emit("placement-cancel");
       if (this.spawnSetMode) EventBus.emit("spawn-set-cancel");
@@ -1697,6 +1723,7 @@ export class OfficeSimulation {
 
   private handleKeyUp = (event: KeyboardEvent): void => {
     this.keysDown.delete(event.code === "Slash" ? "Slash" : event.key);
+    if (event.code) this.keysDown.delete(event.code);
   };
 
   private handleWindowBlur = (): void => {
@@ -2959,11 +2986,31 @@ export class OfficeSimulation {
 
   private updatePlayer(): void {
     const player = this.player!;
-    // keyboard input
-    const left = !this.meetingMode && this.isKeyDown("ArrowLeft");
-    const right = !this.meetingMode && this.isKeyDown("ArrowRight");
-    const up = !this.meetingMode && this.isKeyDown("ArrowUp");
-    const down = !this.meetingMode && this.isKeyDown("ArrowDown");
+    // keyboard input: arrows and WASD
+    const left =
+      !this.meetingMode &&
+      (this.isKeyDown("ArrowLeft") ||
+        this.isKeyDown("a") ||
+        this.isKeyDown("A") ||
+        this.isKeyDown("KeyA"));
+    const right =
+      !this.meetingMode &&
+      (this.isKeyDown("ArrowRight") ||
+        this.isKeyDown("d") ||
+        this.isKeyDown("D") ||
+        this.isKeyDown("KeyD"));
+    const up =
+      !this.meetingMode &&
+      (this.isKeyDown("ArrowUp") ||
+        this.isKeyDown("w") ||
+        this.isKeyDown("W") ||
+        this.isKeyDown("KeyW"));
+    const down =
+      !this.meetingMode &&
+      (this.isKeyDown("ArrowDown") ||
+        this.isKeyDown("s") ||
+        this.isKeyDown("S") ||
+        this.isKeyDown("KeyS"));
     const hasKeyboardInput = left || right || up || down;
     if (hasKeyboardInput) {
       this.cancelMeetingEntry();
@@ -3098,51 +3145,115 @@ export class OfficeSimulation {
       let vx = 0;
       let vy = 0;
 
-      // Horizontal move (walkable and no NPC/player)
-      if (left) {
-        const checkX = Math.floor((player.x - 12) / TILE_SIZE);
-        if (this.isWalkable(checkX, currentTileY)) vx = -PLAYER_SPEED;
-      } else if (right) {
-        const checkX = Math.floor((player.x + 12) / TILE_SIZE);
-        if (this.isWalkable(checkX, currentTileY)) vx = PLAYER_SPEED;
-      }
+      const isCameraRelative =
+        this.cameraHeading &&
+        (this.cameraHeading.mode === "first_person" || this.cameraHeading.mode === "third_person");
 
-      // Vertical move
-      if (up) {
-        const checkY = Math.floor((player.y - 12) / TILE_SIZE);
-        if (this.isWalkable(currentTileX, checkY)) vy = -PLAYER_SPEED;
-      } else if (down) {
-        const checkY = Math.floor((player.y + 12) / TILE_SIZE);
-        if (this.isWalkable(currentTileX, checkY)) vy = PLAYER_SPEED;
-      }
+      if (isCameraRelative) {
+        const { forwardX, forwardZ } = this.cameraHeading!;
+        // forward vector in simulation/world space: (forwardX, forwardZ)
+        // right vector: (-forwardZ, forwardX)
+        const moveForward = (up ? 1 : 0) - (down ? 1 : 0);
+        const moveRight = (right ? 1 : 0) - (left ? 1 : 0);
 
-      if (vx !== 0 && vy !== 0) {
-        const factor = Math.SQRT1_2;
-        vx *= factor;
-        vy *= factor;
+        const dirX = forwardX * moveForward - forwardZ * moveRight;
+        const dirY = forwardZ * moveForward + forwardX * moveRight;
+        const len = Math.hypot(dirX, dirY);
+        if (len > 0.0001) {
+          vx = (dirX / len) * PLAYER_SPEED;
+          vy = (dirY / len) * PLAYER_SPEED;
+        }
+      } else {
+        // Horizontal move (walkable and no NPC/player)
+        if (left) {
+          const checkX = Math.floor((player.x - 12) / TILE_SIZE);
+          if (this.isWalkable(checkX, currentTileY)) vx = -PLAYER_SPEED;
+        } else if (right) {
+          const checkX = Math.floor((player.x + 12) / TILE_SIZE);
+          if (this.isWalkable(checkX, currentTileY)) vx = PLAYER_SPEED;
+        }
+
+        // Vertical move
+        if (up) {
+          const checkY = Math.floor((player.y - 12) / TILE_SIZE);
+          if (this.isWalkable(currentTileX, checkY)) vy = -PLAYER_SPEED;
+        } else if (down) {
+          const checkY = Math.floor((player.y + 12) / TILE_SIZE);
+          if (this.isWalkable(currentTileX, checkY)) vy = PLAYER_SPEED;
+        }
+
+        if (vx !== 0 && vy !== 0) {
+          const factor = Math.SQRT1_2;
+          vx *= factor;
+          vy *= factor;
+        }
       }
 
       const dt = Math.min(this.delta, 100) / 1000;
-      if (
-        !clearMovementSegment(
+      const canMoveBoth =
+        clearMovementSegment(
           { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
           {
             x: (player.x + vx * dt) / TILE_SIZE - 0.5,
             y: (player.y + vy * dt) / TILE_SIZE - 0.5,
           },
           (x, y) => this.isWalkable(x, y),
-        ) ||
-        !clearActors(
+        ) &&
+        clearActors(
           { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
           {
             x: (player.x + vx * dt) / TILE_SIZE - 0.5,
             y: (player.y + vy * dt) / TILE_SIZE - 0.5,
           },
           this.trafficActors().filter((actor) => actor.id !== "player:local"),
-        )
-      ) {
-        vx = 0;
-        vy = 0;
+        );
+
+      if (!canMoveBoth) {
+        const canX =
+          vx !== 0 &&
+          clearMovementSegment(
+            { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
+            {
+              x: (player.x + vx * dt) / TILE_SIZE - 0.5,
+              y: player.y / TILE_SIZE - 0.5,
+            },
+            (x, y) => this.isWalkable(x, y),
+          ) &&
+          clearActors(
+            { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
+            {
+              x: (player.x + vx * dt) / TILE_SIZE - 0.5,
+              y: player.y / TILE_SIZE - 0.5,
+            },
+            this.trafficActors().filter((actor) => actor.id !== "player:local"),
+          );
+        const canY =
+          vy !== 0 &&
+          clearMovementSegment(
+            { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
+            {
+              x: player.x / TILE_SIZE - 0.5,
+              y: (player.y + vy * dt) / TILE_SIZE - 0.5,
+            },
+            (x, y) => this.isWalkable(x, y),
+          ) &&
+          clearActors(
+            { x: player.x / TILE_SIZE - 0.5, y: player.y / TILE_SIZE - 0.5 },
+            {
+              x: player.x / TILE_SIZE - 0.5,
+              y: (player.y + vy * dt) / TILE_SIZE - 0.5,
+            },
+            this.trafficActors().filter((actor) => actor.id !== "player:local"),
+          );
+
+        if (canX && !canY) {
+          vy = 0;
+        } else if (!canX && canY) {
+          vx = 0;
+        } else if (!canX && !canY) {
+          vx = 0;
+          vy = 0;
+        }
       }
       this.playerActuallyWalking = this.commitPlayerStep({
         x: player.x + vx * dt,

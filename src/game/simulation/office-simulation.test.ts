@@ -4,6 +4,7 @@ import { EventBus, pendingChannelData, setPendingChannelData } from "../EventBus
 import { OfficeSimulation, isTypingTarget } from "./office-simulation";
 import type { TickLoop } from "./tick-loop";
 import { SMALLTALK_LINES } from "../npc-smalltalk";
+import { DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT } from "./directions";
 
 type Runtime = OfficeSimulation & Record<string, unknown>;
 
@@ -754,4 +755,126 @@ test("npc:states replaces the state lists and labels the snapshot carries", asyn
   } finally {
     sim.dispose();
   }
+});
+
+test("WASD keys move the player and update direction and walking state", async () => {
+  setPendingChannelData({ channelId: "ch", mapData: legacyMap });
+  const sim = new OfficeSimulation() as Runtime;
+  try {
+    await withFetch({ npcs: [] }, async () => {
+      sim["boot"](pendingChannelData!);
+      await settle();
+    });
+    // Center player on a walkable tile
+    sim["player"] = { x: 2 * 32 + 16, y: 2 * 32 + 16 };
+    sim["delta"] = 50;
+
+    // Press 'D' (right)
+    sim["keysDown"].add("d");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_RIGHT);
+    assert.equal(sim["playerActuallyWalking"], true);
+    sim["keysDown"].clear();
+
+    // Press 'S' (down)
+    sim["keysDown"].add("s");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_DOWN);
+    assert.equal(sim["playerActuallyWalking"], true);
+    sim["keysDown"].clear();
+
+    // Press 'A' (left)
+    sim["keysDown"].add("a");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_LEFT);
+    assert.equal(sim["playerActuallyWalking"], true);
+    sim["keysDown"].clear();
+
+    // Press 'W' (up)
+    sim["keysDown"].add("w");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_UP);
+    assert.equal(sim["playerActuallyWalking"], true);
+    sim["keysDown"].clear();
+  } finally {
+    sim.dispose();
+  }
+});
+
+test("camera-relative WASD movement directs player along camera sightline in first/third person", async () => {
+  const map = {
+    layers: {
+      floor: Array.from({ length: 10 }, () => Array(10).fill(1)),
+      walls: Array.from({ length: 10 }, () => Array(10).fill(0)),
+    },
+    objects: [],
+  };
+  setPendingChannelData({
+    channelId: "cam-ch",
+    mapData: map,
+    savedPosition: { x: 5 * 32, y: 5 * 32 },
+  });
+  const sim = new OfficeSimulation() as Runtime;
+  try {
+    await withFetch({ npcs: [] }, async () => {
+      sim["boot"](pendingChannelData!);
+      await settle();
+    });
+
+    sim["delta"] = 50;
+    const startX = sim["player"]!.x;
+    const startY = sim["player"]!.y;
+
+    // Simulate camera facing south (+Z in 3D, forwardX: 0, forwardZ: 1) in first_person mode
+    EventBus.emit("camera:heading", { forwardX: 0, forwardZ: 1, mode: "first_person" });
+
+    // Press 'W' (should move forward along camera sightline, i.e., +Y in simulation)
+    sim["keysDown"].add("w");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_DOWN, "W facing south must move down (+Y)");
+    assert.ok(sim["player"]!.y > startY, "Player Y must increase when moving forward facing south");
+    sim["keysDown"].clear();
+
+    // Reset position
+    sim["player"]!.x = startX;
+    sim["player"]!.y = startY;
+
+    // Press 'S' (should move backward, i.e., -Y in simulation)
+    sim["keysDown"].add("s");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_UP, "S facing south must move up (-Y)");
+    assert.ok(sim["player"]!.y < startY, "Player Y must decrease when moving backward facing south");
+    sim["keysDown"].clear();
+
+    // Reset position
+    sim["player"]!.x = startX;
+    sim["player"]!.y = startY;
+
+    // Simulate camera facing east (+X in 3D, forwardX: 1, forwardZ: 0) in third_person mode
+    EventBus.emit("camera:heading", { forwardX: 1, forwardZ: 0, mode: "third_person" });
+
+    // Press 'W' (should move forward along east, i.e., +X in simulation)
+    sim["keysDown"].add("w");
+    sim["updatePlayer"]();
+    assert.equal(sim["currentDirection"], DIR_RIGHT, "W facing east must move right (+X)");
+    assert.ok(sim["player"]!.x > startX, "Player X must increase when moving forward facing east");
+    sim["keysDown"].clear();
+  } finally {
+    sim.dispose();
+  }
+});
+
+test("isTypingTarget recognizes text inputs and editable elements", () => {
+  assert.equal(isTypingTarget(null), false);
+  assert.equal(isTypingTarget({ tagName: "INPUT" } as unknown as EventTarget), true);
+  assert.equal(isTypingTarget({ tagName: "TEXTAREA" } as unknown as EventTarget), true);
+  assert.equal(isTypingTarget({ tagName: "SELECT" } as unknown as EventTarget), true);
+  assert.equal(
+    isTypingTarget({ tagName: "DIV", isContentEditable: true } as unknown as EventTarget),
+    true,
+  );
+  assert.equal(
+    isTypingTarget({ tagName: "CANVAS", isContentEditable: false } as unknown as EventTarget),
+    false,
+  );
 });
