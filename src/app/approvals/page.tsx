@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import ApprovalsPanel from "@/components/approvals/ApprovalsPanel";
+import HermesApprovalsInbox from "@/components/approvals/HermesApprovalsInbox";
 import { useWorkspaceChannels } from "@/components/workspace/use-workspace-channels";
 import { useT } from "@/lib/i18n";
 
@@ -22,7 +22,7 @@ export default function ApprovalsPage() {
 
 function ApprovalsPageInner() {
   const t = useT();
-  const { channels, selectedChannelId, setSelectedChannelId, loading } = useWorkspaceChannels();
+  const { channels, loading } = useWorkspaceChannels();
 
   if (loading) {
     return (
@@ -41,29 +41,5 @@ function ApprovalsPageInner() {
     );
   }
 
-  return (
-    <div className="theme-web workspace-page p-4 flex flex-col flex-1 h-[calc(100vh-2rem)]">
-      {channels.length > 0 && (
-        <div className="mb-3 flex items-center gap-2">
-          <label className="text-xs font-semibold text-text-dim">Office:</label>
-          <select
-            value={selectedChannelId}
-            onChange={(e) => setSelectedChannelId(e.target.value)}
-            className="rounded border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text focus:border-primary focus:outline-none"
-          >
-            <option value="all">{t("common.all") || "All Offices"}</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="flex-1 rounded-xl border border-border bg-surface overflow-hidden shadow-sm">
-        <ApprovalsPanel channelId={selectedChannelId} embedded={true} />
-      </div>
-    </div>
-  );
+  return <HermesApprovalsInbox channels={channels} />;
 }

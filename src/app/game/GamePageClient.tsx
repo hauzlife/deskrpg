@@ -162,6 +162,7 @@ import {
   type NpcWorkingMap,
 } from "./npc-working-state";
 import { getLocalizedErrorMessage, getLocalizedMessage } from "@/lib/i18n/error-codes";
+import { getSocketServerUrl } from "@/lib/socket-url";
 import { mentionSkipI18nKey } from "@/components/meeting-room/mention-skip-notice";
 import type { MentionSkipReason } from "@/lib/conversation/floor-controller";
 import { resolveNpcResponseChunk, type NpcResponsePayload } from "@/lib/npc-response-messages";
@@ -235,21 +236,6 @@ interface ChannelPlayerSummary {
   userId?: string;
   name: string;
   appearance: CharacterAppearanceData | null;
-}
-
-function getSocketServerUrl(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-
-  const explicitUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
-  if (explicitUrl) return explicitUrl;
-
-  if (process.env.NODE_ENV !== "production") return undefined;
-
-  const { protocol, hostname, port } = window.location;
-  const currentPort = Number.parseInt(port, 10);
-  if (!Number.isFinite(currentPort)) return undefined;
-
-  return `${protocol}//${hostname}:${currentPort + 1}`;
 }
 
 type GamePageClientProps = {
@@ -2496,10 +2482,7 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
       setReportingMessageId((current) => (current === data.messageId ? null : current));
     };
 
-    const handleLeadReportFailed = (data: {
-      messageId: string;
-      reportingNpcId: string;
-    }) => {
+    const handleLeadReportFailed = (data: { messageId: string; reportingNpcId: string }) => {
       const sig = reportSignaturesRef.current[data.reportingNpcId] ?? "unknown:none";
       reportAttemptsRef.current = [
         ...reportAttemptsRef.current.filter((a) => a.messageId !== data.messageId).slice(-49),
