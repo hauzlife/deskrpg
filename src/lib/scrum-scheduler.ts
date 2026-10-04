@@ -88,6 +88,46 @@ export const SCRUM_SCHEDULE: readonly ScheduledCeremonyWindow[] = [
     windowMinutes: 30,
     name: "Sprint Retrospective",
   },
+  {
+    type: "daily_standup",
+    dayOfWeek: 6, // Saturday
+    startHour: 8,
+    startMinute: 30,
+    windowMinutes: 30,
+    name: "Daily Standup (Sábado — 24/7)",
+  },
+  {
+    type: "mid_sprint_check",
+    dayOfWeek: 6, // Saturday
+    startHour: 14,
+    startMinute: 0,
+    windowMinutes: 30,
+    name: "Weekend Architecture & Scope Guard",
+  },
+  {
+    type: "daily_standup",
+    dayOfWeek: 0, // Sunday
+    startHour: 8,
+    startMinute: 30,
+    windowMinutes: 30,
+    name: "Daily Standup (Domingo — 24/7)",
+  },
+  {
+    type: "sprint_review",
+    dayOfWeek: 0, // Sunday
+    startHour: 16,
+    startMinute: 30,
+    windowMinutes: 30,
+    name: "Sunday Continuous Sprint Review",
+  },
+  {
+    type: "sprint_retrospective",
+    dayOfWeek: 0, // Sunday
+    startHour: 17,
+    startMinute: 30,
+    windowMinutes: 30,
+    name: "Sunday Retrospective & Continuous Alignment",
+  },
 ] as const;
 
 // In-memory deduplication set: `ceremony_YYYY-MM-DD_type`

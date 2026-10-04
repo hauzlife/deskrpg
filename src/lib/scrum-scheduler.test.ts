@@ -41,6 +41,17 @@ test("getSprintTagForDate formats sprint-wXX-YYYY", () => {
   assert.match(tag, /^sprint-w\d+-2026$/);
 });
 
+test("SCRUM_SCHEDULE covers 24/7 operations including Saturday and Sunday", () => {
+  const saturdayStandup = SCRUM_SCHEDULE.find((s) => s.dayOfWeek === 6 && s.type === "daily_standup");
+  const sundayStandup = SCRUM_SCHEDULE.find((s) => s.dayOfWeek === 0 && s.type === "daily_standup");
+  assert.ok(saturdayStandup, "Saturday standup must be scheduled");
+  assert.ok(sundayStandup, "Sunday standup must be scheduled");
+
+  // Verify Sunday 08:35 matches Sunday standup
+  const sunday835 = new Date("2026-10-04T08:35:00");
+  assert.equal(isDateInCeremonyWindow(sunday835, sundayStandup), true);
+});
+
 test("checkAndTriggerScrumCeremonies respects force flag and triggers ceremony", async () => {
   clearExecutedCeremoniesCache();
   // Using an artificial date that matches Thursday 08:35

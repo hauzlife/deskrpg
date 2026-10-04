@@ -120,6 +120,26 @@ export function fingerprintMarker(fingerprint: string): string {
   return `<!-- ${ALERT_FINGERPRINT_PREFIX}${fingerprint} -->`;
 }
 
+const SENTRY_ISSUE_PREFIX = "sentry-issue:";
+
+/**
+ * Sentry-style issue identity grouping.
+ * Groups by alertname, board, and service tier/component so events from multiple
+ * workers or fleeting timestamps roll up into the SAME active issue rather than opening N cards.
+ */
+export function buildSentryIssueFingerprint(alert: AlertManagerAlert, boardSlug: string): string {
+  const labels = alert.labels || {};
+  const alertName = normalizeFingerprintPart(labels.alertname, "unknown-alert");
+  const tier = normalizeFingerprintPart(labels.tier || labels.service_tier || labels.job, "default-tier");
+  const board = normalizeFingerprintPart(boardSlug, "general");
+  const issueSource = `${board}\u001f${alertName}\u001f${tier}`;
+  return createHash("sha256").update(issueSource, "utf8").digest("hex").slice(0, 24);
+}
+
+export function sentryIssueMarker(fingerprint: string): string {
+  return `<!-- ${SENTRY_ISSUE_PREFIX}${fingerprint} -->`;
+}
+
 function isSafeBoardSlug(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9_-]{0,62})$/.test(value);
 }
@@ -441,7 +461,7 @@ export async function POST(req: NextRequest) {
       ].join("\n");
 
       const boardSlug = "eng-ops";
-      const assignee = "backend-engineer";
+      const assignee = "product-manager";
       const testDbPath = req.headers.get("x-test-database-path") || process.env.TEST_KANBAN_DB_PATH;
 
       const result = insertTaskSafely(boardSlug, {
@@ -450,14 +470,14 @@ export async function POST(req: NextRequest) {
         assignee,
         priority,
         parentId: "langfuse-alert",
-        initialStatus: "ready",
+        initialStatus: "triage",
         databasePath: testDbPath || undefined,
       });
 
       try {
         const tactical = await resolveTacticalRoomId(
           "1586d6fd-d570-4c19-9b98-bde557e95589",
-          "backend-engineer",
+          "product-manager",
         );
         if (tactical) {
           const message = await appendRoomMessage({
@@ -465,7 +485,7 @@ export async function POST(req: NextRequest) {
             senderId: null,
             senderName: "Langfuse Sentinel",
             senderKind: "system",
-            content: `🚨 **[ALERTA LANGFUSE ${severity}]** ${title}\n${monitorBody}\n🔗 [Abrir no Langfuse](${permalink})`,
+            content: `🚨 **[ALERTA LANGFUSE ${severity} — TRIAGE]** ${title}\n${monitorBody}\n👤 Atribuído a: @product-manager para especificação.\n🔗 [Abrir no Langfuse](${permalink})`,
           });
           requestEmitRoomMessage(tactical.roomId, message);
         }
@@ -513,10 +533,13 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      const boardSlug = resolveBoardSlug(labels);
       const fingerprint = buildAlertFingerprint(alert);
       const dedupKey = fingerprintMarker(fingerprint);
-      const boardSlug = resolveBoardSlug(labels);
-      const assignee = resolveAssignee(labels, boardSlug);
+      const sentryFingerprint = buildSentryIssueFingerprint(alert, boardSlug);
+      const sentryDedupKey = sentryIssueMarker(sentryFingerprint);
+      const targetSpecialist = resolveAssignee(labels, boardSlug);
+      const assignee = "product-manager"; // Inviolable Rule: All new incidents start with PM in triage
       const severity = labels.severity?.toUpperCase() ?? "HIGH";
       const priority = severity === "CRITICAL" ? 10 : 8;
       const summary =
@@ -535,24 +558,20 @@ export async function POST(req: NextRequest) {
             const sqlite = getSqliteDatabase(dbPath);
             const searchKeyword = labels.alertname || summary;
 
-            // Search by fingerprint marker first, then fallback to alertname/summary
+            // Search by Sentry issue marker first, then fingerprint marker, then alertname/summary
             let tasks = sqlite
               .prepare(
-                "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND title NOT LIKE '%Infra Health Dashboard%' AND title NOT LIKE '%Incident Sentinel%' AND body LIKE ?",
+                `SELECT id, title, assignee FROM tasks
+                 WHERE status NOT IN ('done', 'archived')
+                   AND title NOT LIKE '%Infra Health Dashboard%'
+                   AND title NOT LIKE '%Incident Sentinel%'
+                   AND (body LIKE ? OR body LIKE ? OR body LIKE ?)`,
               )
-              .all(`%${dedupKey}%`) as Array<{ id: string; title: string; assignee: string }>;
-
-            if (tasks.length === 0) {
-              tasks = sqlite
-                .prepare(
-                  "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND title NOT LIKE '%Infra Health Dashboard%' AND title NOT LIKE '%Incident Sentinel%' AND (title LIKE ? OR body LIKE ?)",
-                )
-                .all(`%${searchKeyword}%`, `%${searchKeyword}%`) as Array<{
-                id: string;
-                title: string;
-                assignee: string;
-              }>;
-            }
+              .all(`%${sentryDedupKey}%`, `%${dedupKey}%`, `%${searchKeyword}%`) as Array<{
+              id: string;
+              title: string;
+              assignee: string;
+            }>;
 
             // Also notify active master card if present, without closing it
             const activeMaster = sqlite
@@ -574,7 +593,7 @@ export async function POST(req: NextRequest) {
             }
 
             for (const t of tasks) {
-              const resolveComment = `✅ [AUTO-RESOLVED] O alerta '${summary}' foi resolvido no Grafana/Alertmanager em ${alert.endsAt || new Date().toISOString()}. Telemetria normalizada.`;
+              const resolveComment = `✅ [SENTRY AUTO-RESOLVED] O alerta '${summary}' foi resolvido no Grafana/Alertmanager em ${alert.endsAt || new Date().toISOString()}. Telemetria normalizada. Card encerrado.`;
               try {
                 sqlite
                   .prepare(
@@ -610,7 +629,7 @@ export async function POST(req: NextRequest) {
                     );
                     if (tactical) {
                       const resolveNotice = [
-                        `🟢 **[INCIDENTE RESOLVIDO — TELEMETRIA]** \`${t.id}\``,
+                        `🟢 **[INCIDENTE RESOLVIDO — SENTRY TELEMETRIA]** \`${t.id}\``,
                         `**Assunto:** ${t.title}`,
                         `👤 Notificando: @${t.assignee || assignee}`,
                         `📋 Board: \`${boardSlug}\``,
@@ -620,7 +639,7 @@ export async function POST(req: NextRequest) {
                       const message = await appendRoomMessage({
                         roomId: tactical.roomId,
                         senderId: null,
-                        senderName: "Alertmanager Sentinel",
+                        senderName: "Sentry Sentinel",
                         senderKind: "system",
                         content: resolveNotice,
                       });
@@ -652,31 +671,20 @@ export async function POST(req: NextRequest) {
         "Alerta recebido do Alertmanager / Vector telemetry pipeline.";
 
       const title = `[INCIDENT-${severity}][${boardSlug.toUpperCase()}] ${summary}`;
-      const body = [
-        dedupKey,
-        `### 🚨 Alerta de Produção — Alertmanager [P0-EMERGENCY]`,
-        `- **Alerta:** \`${labels.alertname || "Desconhecido"}\``,
-        `- **Gravidade:** \`${severity}\``,
-        `- **Prioridade:** \`${priority === 10 ? "P0 (Crítica)" : "P1 (Alta)"}\``,
-        `- **Tier:** \`${labels.tier || "N/A"}\``,
-        labels.instance ? `- **Instância/Host:** \`${labels.instance}\`` : null,
-        labels.bot ? `- **Bot Afetado:** \`${labels.bot}\`` : null,
-        labels.group ? `- **Grupo:** \`${labels.group}\`` : null,
-        `- **Descrição:** ${description}`,
-        `- **Gerado em:** \`${alert.startsAt || new Date().toISOString()}\``,
-        `\n> **Ação Autônoma:** Criado automaticamente pelo Webhook de Telemetria do DeskRPG (Zero Gambiarra).`,
-      ]
-        .filter(Boolean)
-        .join("\n");
 
       // Sync incoming alert event immediately to the local Artifact Pyramid (Zero Data Loss)
       syncAlertToArtifactPyramid(alert, boardSlug, false);
 
-      // Check if an active Master Sentinel / Infra Health Dashboard card exists on this board
       const dbPath =
         testDbPath ||
         path.join(os.homedir(), ".hermes", "kanban", "boards", boardSlug, "kanban.db");
+
+      // 1. Check if an active Master Sentinel / Infra Health Dashboard card exists on this board
       let masterCard: { id: string; title: string; assignee: string } | undefined;
+      let existingActiveTask:
+        | { id: string; title: string; assignee: string; status: string; body: string }
+        | undefined;
+
       if (fs.existsSync(dbPath)) {
         try {
           const sqlite = getSqliteDatabase(dbPath);
@@ -685,6 +693,27 @@ export async function POST(req: NextRequest) {
               "SELECT id, title, assignee FROM tasks WHERE status NOT IN ('done', 'archived') AND (title LIKE '%Infra Health Dashboard%' OR title LIKE '%Incident Sentinel%') LIMIT 1",
             )
             .get() as { id: string; title: string; assignee: string } | undefined;
+
+          // 2. SENTRY ROLLUP CHECK:
+          // Check if an active issue card already exists for this alert category/class on this board
+          if (!masterCard) {
+            existingActiveTask = sqlite
+              .prepare(
+                `SELECT id, title, assignee, status, body FROM tasks
+                 WHERE status NOT IN ('done', 'archived')
+                   AND title NOT LIKE '%Infra Health Dashboard%'
+                   AND title NOT LIKE '%Incident Sentinel%'
+                   AND (body LIKE ? OR body LIKE ? OR body LIKE ?)
+                 ORDER BY created_at DESC LIMIT 1`,
+              )
+              .get(
+                `%${sentryDedupKey}%`,
+                `%${dedupKey}%`,
+                `%<!-- alertname: ${labels.alertname || "never_match"} -->%`,
+              ) as
+              | { id: string; title: string; assignee: string; status: string; body: string }
+              | undefined;
+          }
         } catch {}
       }
 
@@ -717,19 +746,142 @@ export async function POST(req: NextRequest) {
           taskId: masterCard.id,
           reason: "updated_existing",
         };
+      } else if (existingActiveTask) {
+        // SENTRY ISSUE ROLLUP:
+        // An active issue card already exists! Do NOT open a new card.
+        // Accumulate occurrences, update last seen, append target, and record event.
+        try {
+          const sqlite = getSqliteDatabase(dbPath);
+          const now = Math.floor(Date.now() / 1000);
+          const target =
+            labels.bot || labels.instance || labels.endpoint || labels.server || "cluster";
+
+          let updatedBody = existingActiveTask.body;
+          const countMatch = updatedBody.match(/<!-- occurrences:\s*(\d+)\s*-->/);
+          const currentCount = countMatch ? parseInt(countMatch[1], 10) : 1;
+          const newCount = currentCount + 1;
+
+          if (countMatch) {
+            updatedBody = updatedBody.replace(
+              /<!-- occurrences:\s*(\d+)\s*-->/,
+              `<!-- occurrences: ${newCount} -->`,
+            );
+          } else {
+            updatedBody = `<!-- occurrences: ${newCount} -->\n${updatedBody}`;
+          }
+
+          updatedBody = updatedBody.replace(
+            /(\*\*Ocorrências(?:\s+Acumuladas)?:\*\*)\s*\d+/,
+            `$1 ${newCount}`,
+          );
+
+          const lastSeenIso = alert.startsAt || new Date().toISOString();
+          updatedBody = updatedBody.replace(
+            /(\*\*Última Ocorrência \(Last Seen\):\*\*)\s*`[^`]+`/,
+            `$1 \`${lastSeenIso}\``,
+          );
+
+          if (target && !updatedBody.includes(`\`${target}\``)) {
+            updatedBody = updatedBody.replace(
+              /(\*\*Alvos Afetados:\*\*)\s*([^\n]+)/,
+              `$1 $2, \`${target}\``,
+            );
+          }
+
+          sqlite
+            .prepare("UPDATE tasks SET body = ? WHERE id = ?")
+            .run(updatedBody, existingActiveTask.id);
+
+          const rollupComment = `🔥 **[SENTRY ROLLUP — OCORRÊNCIA #${newCount}]**
+- **Alerta:** \`${labels.alertname || "Desconhecido"}\`
+- **Alvo:** \`${target}\`
+- **Data/Hora:** \`${lastSeenIso}\`
+- **Resumo:** ${summary}
+> *Card mantido único na coluna \`${existingActiveTask.status}\` sob governança de @${existingActiveTask.assignee}. Zero spam no Kanban.*`;
+
+          sqlite
+            .prepare(
+              "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, 'sentry-local-sentinel', ?, ?)",
+            )
+            .run(existingActiveTask.id, rollupComment, now);
+
+          sqlite
+            .prepare(
+              "INSERT INTO task_events (task_id, run_id, kind, payload, created_at) VALUES (?, NULL, 'updated', ?, ?)",
+            )
+            .run(
+              existingActiveTask.id,
+              JSON.stringify({
+                source: "sentry-local-sentinel",
+                action: "rollup",
+                occurrences: newCount,
+                target,
+                alertname: labels.alertname,
+              }),
+              now,
+            );
+        } catch (rollupErr) {
+          console.error("[alertmanager-webhook] Error accumulating sentry event:", rollupErr);
+        }
+
+        result = {
+          success: true,
+          taskId: existingActiveTask.id,
+          reason: "updated_existing",
+        };
       } else {
-        // No master card exists: insert safely (creates new card or deduplicates via fingerprint)
+        // No master card and no active issue exists:
+        // CREATE A NEW SENTRY ISSUE CARD IN TRIAGE (Assigned to Product Manager for specification)
+        const target =
+          labels.bot || labels.instance || labels.endpoint || labels.server || "cluster";
+        const nowIso = alert.startsAt || new Date().toISOString();
+
+        const body = [
+          sentryDedupKey,
+          dedupKey,
+          `<!-- alertname: ${labels.alertname || "unknown"} -->`,
+          `<!-- occurrences: 1 -->`,
+          `<!-- first-seen: ${nowIso} -->`,
+          `### 🚨 [SENTRY INCIDENT] ${title}`,
+          `- **Alerta:** \`${labels.alertname || "Desconhecido"}\``,
+          `- **Gravidade:** \`${severity}\``,
+          `- **Prioridade:** \`${priority === 10 ? "P0 (Crítica)" : "P1 (Alta)"}\``,
+          `- **Tier:** \`${labels.tier || "N/A"}\``,
+          `- **Ocorrências Acumuladas:** 1`,
+          `- **Primeira Ocorrência (First Seen):** \`${nowIso}\``,
+          `- **Última Ocorrência (Last Seen):** \`${nowIso}\``,
+          `- **Alvos Afetados:** \`${target}\``,
+          `- **Descrição da Telemetria:** ${description}`,
+          `\n> **Ação Autônoma:** Criado em triage pelo Webhook Sentry-Like (Zero Spam, Rollup Ativo).`,
+          `\n---`,
+          `\n### 📋 Governança Obrigatória: Triagem & Especificação (PM)`,
+          `> ⚠️ **GATE DE TRIAGEM ATIVO**: Este incidente está em \`triage\` sob responsabilidade do @product-manager. O despachante NÃO executará código até a especificação ser aprovada e movida para \`ready\`.`,
+          `\n#### 1. Contexto & Impacto no Negócio (PM)`,
+          `- [ ] Analisar severidade real e impacto em receita / checkout / clientes.`,
+          `- [ ] Alvos afetados confirmados: \`${target}\`.`,
+          `\n#### 2. Critérios de Aceite Verificáveis (BDD Given-When-Then)`,
+          `- [ ] **Given**: Falha no alerta \`${labels.alertname || "Desconhecido"}\` reproduzida via telemetria ou teste de regressão.`,
+          `- [ ] **When**: Correção aplicada no componente \`${target}\` pelo especialista técnico.`,
+          `- [ ] **Then**: Taxa de erro normalizada para 0%, logs limpos e suíte de testes 100% verde com exit code 0.`,
+          `\n#### 3. Planejamento & Fatiamento (Compose)`,
+          `- **Especialista Sugerido para Execução (após Triage):** @${targetSpecialist}`,
+          `- [ ] Se hotfix atômico: o @product-manager aprova, move para \`ready\` e atribui a @${targetSpecialist}.`,
+          `- [ ] Se incidente estrutural: acionar @implementation-planner para fatiar em sub-tarefas antes de despachar.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
         result = insertTaskSafely(boardSlug, {
           title,
           body,
-          assignee,
+          assignee: "product-manager",
           priority,
           parentId: "root-incident",
-          initialStatus: "ready",
+          initialStatus: "triage",
           wipLimit: priority >= 9 ? 100 : 50,
-          dedupKey,
+          dedupKey: sentryDedupKey,
           databasePath: testDbPath || undefined,
-          updateComment: `🔁 [ALERTA DUPLICADO INIBIDO] O evento '${summary}' foi recebido novamente para o mesmo alerta/tier/alvo/janela (fingerprint ${fingerprint}). Card ativo mantido e evento registrado.`,
+          updateComment: `🔁 [SENTRY ROLLUP INIBIDO] O evento '${summary}' foi recebido novamente (fingerprint ${fingerprint}). Card mantido único em triage e evento registrado.`,
         });
       }
 
@@ -738,26 +890,27 @@ export async function POST(req: NextRequest) {
       } else if (result.success && result.taskId && result.reason !== "already_exists") {
         createdTasks.push({ taskId: result.taskId, board: boardSlug, title });
 
-        // Non-blocking asynchronous tactical room dispatch and red banner broadcast
+        // Non-blocking asynchronous tactical room dispatch to Product Office for triage
         notificationPromises.push(
           (async () => {
             try {
-              const infraChannelId = "1586d6fd-d570-4c19-9b98-bde557e95589";
-              const tactical = await resolveTacticalRoomId(infraChannelId, assignee);
+              const productChannelId = "1586d6fd-d570-4c19-9b98-bde557e95589";
+              const tactical = await resolveTacticalRoomId(productChannelId, "product-manager");
               if (tactical) {
                 const noticeContent = [
-                  `🚨 **[INCIDENTE DE PRODUÇÃO DETECTADO — P0]** \`${result.taskId}\``,
+                  `🚨 **[NOVO INCIDENTE EM TRIAGEM — SENTRY ROLLUP]** \`${result.taskId}\``,
                   `**Assunto:** ${title}`,
-                  `👤 Atribuído a: @${assignee}`,
+                  `👤 Atribuído a: @product-manager (Triagem e Especificação Obrigatória)`,
                   `📋 Board: \`${boardSlug}\``,
                   `⚠️ Gravidade: \`${severity}\` (Prioridade: ${priority})`,
-                  `*Origem: Vector ➔ Prometheus ➔ Alertmanager ➔ DeskRPG Webhook*`,
+                  `📊 Status Inicial: \`triage\` (Aguardando BDD e Critérios de Aceite)`,
+                  `*Origem: Vector ➔ Prometheus ➔ Alertmanager ➔ Sentry-Local Sentinel*`,
                 ].join("\n");
 
                 const message = await appendRoomMessage({
                   roomId: tactical.roomId,
                   senderId: null,
-                  senderName: "Alertmanager Sentinel",
+                  senderName: "Sentry Sentinel",
                   senderKind: "system",
                   content: noticeContent,
                 });

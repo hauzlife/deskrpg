@@ -402,6 +402,64 @@ export async function roomNpcMemberIds(roomId: string): Promise<string[]> {
   return rows.map((r) => r.memberId);
 }
 
+// ---------------------------------------------------------------------------
+// System Message Anti-Flood / Rate Limiter & Deduplicator (Zero-Spam Guard)
+// ---------------------------------------------------------------------------
+const SYSTEM_DEDUP_WINDOW_MS = 15 * 60 * 1000; // 15 minutes deduplication
+const SYSTEM_BURST_INTERVAL_MS = 10 * 1000; // 10 seconds between system messages per room
+const SYSTEM_MAX_PER_HOUR = 15; // Max 15 system messages per room per hour
+
+type SystemMessageEntry = {
+  contentHash: string;
+  timestamp: number;
+};
+
+const systemRoomHistory = new Map<string, SystemMessageEntry[]>();
+
+export function resetSystemRoomHistory(): void {
+  systemRoomHistory.clear();
+}
+
+function shouldThrottleSystemMessage(roomId: string, content: string): boolean {
+  if (process.env.DISABLE_SYSTEM_MESSAGE_THROTTLE === "1") return false;
+  const now = Date.now();
+  let entries = systemRoomHistory.get(roomId);
+  if (!entries) {
+    entries = [];
+    systemRoomHistory.set(roomId, entries);
+  }
+
+  // Purge entries older than 1 hour
+  entries = entries.filter((e) => now - e.timestamp < 3600 * 1000);
+  systemRoomHistory.set(roomId, entries);
+
+  // Content normalization
+  const normalized = content.trim().replace(/\s+/g, " ");
+
+  // 1. Deduplication check: identical message in last 15 minutes
+  const recentDuplicate = entries.some(
+    (e) => e.contentHash === normalized && now - e.timestamp < SYSTEM_DEDUP_WINDOW_MS,
+  );
+  if (recentDuplicate) {
+    return true;
+  }
+
+  // 2. Burst rate limiter: minimum 10 seconds between system messages
+  const lastEntry = entries[entries.length - 1];
+  if (lastEntry && now - lastEntry.timestamp < SYSTEM_BURST_INTERVAL_MS) {
+    return true;
+  }
+
+  // 3. Hourly volume cap: max 15 system messages per hour per room
+  if (entries.length >= SYSTEM_MAX_PER_HOUR) {
+    return true;
+  }
+
+  // Record allowed entry
+  entries.push({ contentHash: normalized, timestamp: now });
+  return false;
+}
+
 /**
  * Updates the room's last_message_at after inserting.
  * `notice` is the structure for automation notifications (R29·R30) — it's stored as JSON in
@@ -416,6 +474,23 @@ export async function appendRoomMessage(args: {
   content: string;
   notice?: RoomNotice | null;
 }): Promise<RoomMessage> {
+  // Shield room from automated system spam & alert flappings
+  if (args.senderKind === "system" && shouldThrottleSystemMessage(args.roomId, args.content)) {
+    console.warn(
+      `[chat-rooms] System message throttled to protect room ${args.roomId} from overload/flood.`,
+    );
+    return {
+      id: uuidv7(),
+      roomId: args.roomId,
+      senderKind: "system",
+      senderId: null,
+      senderName: args.senderName,
+      content: args.content,
+      createdAt: new Date().toISOString(),
+      notice: args.notice ?? null,
+    };
+  }
+
   const [created] = await db
     .insert(chatRoomMessages)
     .values({

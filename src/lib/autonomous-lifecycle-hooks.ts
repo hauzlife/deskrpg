@@ -952,8 +952,9 @@ export function ensureBoardAntiFloodTriggers(sqlite: ReturnType<typeof getSqlite
       CREATE TRIGGER IF NOT EXISTS trg_antiflood_title_dedup
       BEFORE INSERT ON tasks
       FOR EACH ROW
-      WHEN NEW.status IN ('ready', 'running', 'blocked', 'review', 'todo')
+      WHEN NEW.status IN ('ready', 'running', 'blocked', 'review', 'todo', 'triage')
        AND NEW.body NOT LIKE '%<!-- alertmanager-fingerprint:%'
+       AND NEW.body NOT LIKE '%<!-- sentry-issue:%'
       BEGIN
           SELECT CASE
               WHEN (SELECT COUNT(*) FROM tasks WHERE title = NEW.title AND status NOT IN ('done', 'archived') AND id != NEW.id) >= 1
@@ -973,7 +974,7 @@ export function insertTaskSafely(
     priority: number;
     parentId: string;
     wipLimit?: number;
-    initialStatus?: "todo" | "ready";
+    initialStatus?: "triage" | "todo" | "ready";
     /** Optional stable marker used by event consumers to deduplicate active tasks. */
     dedupKey?: string;
     /** Comment and event payload to append when an active dedupKey match is found. */
@@ -1048,14 +1049,46 @@ export function insertTaskSafely(
     }
 
     if (existing?.id) {
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        const existingRow = sqlite
+          .prepare("SELECT body FROM tasks WHERE id = ?")
+          .get(existing.id) as { body?: string } | undefined;
+        if (existingRow?.body) {
+          let updatedBody = existingRow.body;
+          const countMatch = updatedBody.match(/<!-- occurrences:\s*(\d+)\s*-->/);
+          const currentCount = countMatch ? parseInt(countMatch[1], 10) : 1;
+          const newCount = currentCount + 1;
+          if (countMatch) {
+            updatedBody = updatedBody.replace(
+              /<!-- occurrences:\s*(\d+)\s*-->/,
+              `<!-- occurrences: ${newCount} -->`,
+            );
+          } else {
+            updatedBody = `<!-- occurrences: ${newCount} -->\n${updatedBody}`;
+          }
+          updatedBody = updatedBody.replace(
+            /(\*\*Ocorrências(?:\s+Acumuladas)?:\*\*)\s*\d+/,
+            `$1 ${newCount}`,
+          );
+          const lastSeenIso = new Date(now * 1000).toISOString();
+          updatedBody = updatedBody.replace(
+            /(\*\*Última Ocorrência \(Last Seen\):\*\*)\s*`[^`]+`/,
+            `$1 \`${lastSeenIso}\``,
+          );
+          sqlite.prepare("UPDATE tasks SET body = ? WHERE id = ?").run(updatedBody, existing.id);
+        }
+      } catch (bodyUpdateErr) {
+        console.warn(`[autonomous-hooks] Failed to update accumulated occurrences for ${existing.id}:`, bodyUpdateErr);
+      }
+
       if (spec.updateComment) {
-        const now = Math.floor(Date.now() / 1000);
         try {
           sqlite
             .prepare(
               "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)",
             )
-            .run(existing.id, "alertmanager-webhook", spec.updateComment, now);
+            .run(existing.id, "sentry-local-sentinel", spec.updateComment, now);
         } catch (commentErr) {
           console.warn(
             `[autonomous-hooks] Failed to append dedup comment for ${existing.id}:`,
@@ -1070,8 +1103,8 @@ export function insertTaskSafely(
             .run(
               existing.id,
               JSON.stringify({
-                source: "alertmanager-webhook",
-                action: "deduplicated",
+                source: "sentry-local-sentinel",
+                action: "accumulated",
                 dedupKey: spec.dedupKey,
               }),
               now,
@@ -1086,7 +1119,7 @@ export function insertTaskSafely(
       sqlite.exec("COMMIT");
       transactionOpen = false;
       console.log(
-        `[autonomous-hooks] Active task deduplicated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`,
+        `[autonomous-hooks] Active task deduplicated/accumulated on ${boardSlug}: "${spec.title}" (id: ${existing.id})`,
       );
       return { success: true, taskId: existing.id, reason: "updated_existing" };
     }
