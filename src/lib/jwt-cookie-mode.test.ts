@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isSecureCookie } from "./jwt";
+import { authCookieSameSite, isSecureCookie } from "./jwt";
 
 /** Tests that touch `process.env` must restore it — this process is shared with other files. */
 function withEnv(env: Record<string, string | undefined>, run: () => void) {
@@ -48,5 +48,17 @@ test("a value other than `false`/`true` doesn't count as configured — falls ba
   // behavior, this behavior is pinned here. Change this test first if you want to change it.
   withEnv({ COOKIE_SECURE: "0", NODE_ENV: "production" }, () => {
     assert.equal(isSecureCookie(), true);
+  });
+});
+
+test("HTTPS sessions use SameSite=None for embedded Office authentication", () => {
+  withEnv({ COOKIE_SECURE: "true", NODE_ENV: "production" }, () => {
+    assert.equal(authCookieSameSite(), "none");
+  });
+});
+
+test("HTTP sessions keep SameSite=Lax because SameSite=None requires Secure", () => {
+  withEnv({ COOKIE_SECURE: "false", NODE_ENV: "development" }, () => {
+    assert.equal(authCookieSameSite(), "lax");
   });
 });

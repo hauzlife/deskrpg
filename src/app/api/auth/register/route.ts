@@ -1,7 +1,7 @@
 import { db, groupMembers, groups, isPostgres, users } from "@/db";
 import { buildBootstrapActions, resolveBootstrapCompletion } from "@/lib/rbac/bootstrap";
 import { hashPassword } from "@/lib/password";
-import { signJWT, isSecureCookie } from "@/lib/jwt";
+import { signJWT, isSecureCookie, authCookieSameSite } from "@/lib/jwt";
 import { isAccountPasswordValid } from "@/lib/security-policy";
 import { NextRequest, NextResponse } from "next/server";
 import { count, eq, or } from "drizzle-orm";
@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
   response.cookies.set("token", token, {
     httpOnly: true,
     secure: isSecureCookie(),
-    sameSite: "lax",
+    sameSite: authCookieSameSite(),
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });

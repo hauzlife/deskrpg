@@ -1,6 +1,6 @@
 import { db, users } from "@/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { signJWT, isSecureCookie } from "@/lib/jwt";
+import { signJWT, isSecureCookie, authCookieSameSite } from "@/lib/jwt";
 import { isAccountPasswordValid } from "@/lib/security-policy";
 import { getAuthenticatedUserId, unauthorizedResponse } from "@/lib/rbac/group-api";
 import { NextRequest, NextResponse } from "next/server";
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   response.cookies.set("token", token, {
     httpOnly: true,
     secure: isSecureCookie(),
-    sameSite: "lax",
+    sameSite: authCookieSameSite(),
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });

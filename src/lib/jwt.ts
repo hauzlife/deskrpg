@@ -7,6 +7,19 @@ export function isSecureCookie(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
+/**
+ * Selects the SameSite mode used by the authentication session cookie.
+ *
+ * The Office can be embedded in a desktop renderer whose top-level origin is
+ * not `local.office`. In that deployment shape, `Lax` cookies are not sent
+ * from the iframe and a successful login immediately looks unauthenticated.
+ * `SameSite=None` is valid only together with `Secure`, so it is enabled only
+ * for the same HTTPS mode selected by `isSecureCookie()`.
+ */
+export function authCookieSameSite(): "lax" | "none" {
+  return isSecureCookie() ? "none" : "lax";
+}
+
 const JWT_EXPIRY = "7d";
 
 import { DEV_JWT_SECRET } from "./dev-constants";
