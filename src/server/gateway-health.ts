@@ -45,6 +45,9 @@ const UNAUTHORIZED_CODES: ReadonlySet<string> = new Set(["plugin_unauthorized"])
  */
 export function healthFromPollOutcome(outcome: PollOutcome): GatewayHealthState | null {
   if (outcome.ok) return "ok";
+  // Event ingestion can be degraded independently from the gateway itself: `/deskrpg/events`
+  // also scans profile cron state, while the live board API is the direct reachability probe.
+  if (outcome.gatewayReachable === true) return "ok";
   const boards = outcome.boards ?? [];
   if (boards.some((board) => board.ok)) return "ok";
   const failures = boards.length > 0 ? boards.filter((board) => !board.ok) : [outcome];

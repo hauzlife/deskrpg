@@ -153,7 +153,18 @@ export type PollOutcome =
       restarted: boolean;
       boards?: BoardPollOutcome[];
     }
-  | { ok: false; code: string; reason: string; boards?: BoardPollOutcome[] };
+  | {
+      ok: false;
+      code: string;
+      reason: string;
+      boards?: BoardPollOutcome[];
+      /**
+       * The event stream may time out while the gateway's live board API remains reachable.
+       * This is deliberately separate from `ok`: event ingestion is still degraded, but the
+       * UI must not claim that the AI staff server is down when a direct board probe succeeds.
+       */
+      gatewayReachable?: boolean;
+    };
 
 async function saveBoardRow(
   boardLinkId: string,
@@ -496,11 +507,38 @@ async function pollChannelOnceUnlocked(
     const failed = boards.find((b) => !b.ok);
     if (!carrierOutcome || (!carrierOutcome.ok && failed)) {
       const first = failed as Extract<BoardPollOutcome, { ok: false }> | undefined;
+      let gatewayReachable = false;
+      if (rows.length > 0 && boards.every((board) => !board.ok)) {
+        // The unified event stream also scans cron state for every Hermes profile. A slow or
+        // locked cron database can time out that stream even while the live board API is healthy.
+        // Probe the board endpoint separately so the health badge reflects the gateway itself,
+        // while this failed outcome still preserves the automation error for retry/telemetry.
+        try {
+          const probe = await resolved.ownerClient.kanban.getBoard(rows[0].boardSlug, {
+            includeArchived: false,
+          });
+          gatewayReachable = probe.ok;
+          console.info("[automation-poller] event stream degraded; direct gateway probe completed", {
+            channelId,
+            boardSlug: rows[0].boardSlug,
+            eventCode: first?.code ?? null,
+            gatewayReachable,
+          });
+        } catch (error) {
+          console.warn("[automation-poller] direct gateway probe failed after event stream failure", {
+            channelId,
+            boardSlug: rows[0].boardSlug,
+            eventCode: first?.code ?? null,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       return {
         ok: false,
         code: first?.code ?? "no_board",
         reason: first?.reason ?? "channel has no board row",
         boards,
+        ...(gatewayReachable ? { gatewayReachable: true } : {}),
       };
     }
     if (!carrierOutcome.ok) {

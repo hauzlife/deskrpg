@@ -39,6 +39,16 @@ test("unreachable and timeout mean the gateway could not be reached", () => {
   assert.equal(healthFromPollOutcome(fail("timeout")), "unreachable");
 });
 
+test("a timed-out event stream does not mark the gateway down when the direct board probe succeeded", () => {
+  assert.equal(
+    healthFromPollOutcome({
+      ...fail("timeout"),
+      gatewayReachable: true,
+    }),
+    "ok",
+  );
+});
+
 test("a 401 from a board poll, or the gate's plugin_unauthorized, means the owner key was rejected", () => {
   assert.equal(healthFromPollOutcome(fail("invalid_api_key", 401)), "unauthorized");
   assert.equal(

@@ -366,6 +366,11 @@ test("poll failures are swallowed and recorded in last_error; the next success c
   });
   const failed = await pollChannelOnce(channel.id, broken.deps);
   assert.equal(failed.ok, false);
+  assert.equal(
+    failed.gatewayReachable,
+    true,
+    "a failed event stream must not report a healthy direct gateway as down",
+  );
   let row = await readRow(channel.id);
   assert.equal(row.lastError, "unreachable");
   assert.equal(row.eventCursor, cursor, "커서는 그대로");
