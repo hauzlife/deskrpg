@@ -573,6 +573,8 @@ export type EventsApi = {
     cursor?: string;
     limit?: number;
     include?: string;
+    /** Plugin 0.30.0+: skip gateway-wide cron scanning for non-carrier boards. */
+    exclude?: string;
   }): Promise<PluginResponse<EventsPage>>;
 };
 

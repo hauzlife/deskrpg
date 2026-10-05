@@ -677,7 +677,7 @@ test("with two boards, events are fetched from both", async () => {
   assert.equal(polledBoards.size, 2);
 });
 
-test("include goes only on the receiving board, and the artifact·card-proposal tokens are always attached together", async () => {
+test("gateway-wide tokens go only on the receiving board, and non-carriers skip cron scanning", async () => {
   // The two sources share cursor `a` — enabling only one makes the cursor advance past the other's events and they
   // silently vanish.
   // And both are gateway-global, so attaching them per board would duplicate them by the number of boards.
@@ -688,19 +688,27 @@ test("include goes only on the receiving board, and the artifact·card-proposal 
   const h = await makeDeps();
   assert.ok((await pollChannelOnce(channel.id, h.deps)).ok);
 
-  const byBoard = new Map<string | null, Array<string | null>>();
+  const byBoard = new Map<string | null, { includes: Array<string | null>; excludes: Array<string | null> }>();
   for (const r of eventPolls(server)) {
     const params = new URL(`http://x${r.path}`).searchParams;
     const board = params.get("board");
-    byBoard.set(board, [...(byBoard.get(board) ?? []), params.get("include")]);
+    const current = byBoard.get(board) ?? { includes: [], excludes: [] };
+    current.includes.push(params.get("include"));
+    current.excludes.push(params.get("exclude"));
+    byBoard.set(board, current);
   }
   assert.equal(byBoard.size, 2);
-  for (const [board, includes] of byBoard) {
+  for (const [board, request] of byBoard) {
     const expected = board === second ? null : "artifacts,card_proposals,approvals";
     assert.deepEqual(
-      [...new Set(includes)],
+      [...new Set(request.includes)],
       [expected],
-      `보드 ${board} 의 include 가 ${JSON.stringify(includes)} 입니다`,
+      `보드 ${board} 의 include 가 ${JSON.stringify(request.includes)} 입니다`,
+    );
+    assert.deepEqual(
+      [...new Set(request.excludes)],
+      [board === second ? "cron" : null],
+      `보드 ${board} 의 exclude 가 ${JSON.stringify(request.excludes)} 입니다`,
     );
   }
 });

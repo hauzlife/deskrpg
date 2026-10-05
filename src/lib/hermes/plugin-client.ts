@@ -462,6 +462,7 @@ export function createOwnerPluginClient(
           cursor: opts.cursor,
           limit: opts.limit,
           include: opts.include,
+          exclude: opts.exclude,
         })}`,
         token,
       ),

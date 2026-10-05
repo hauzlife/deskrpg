@@ -381,6 +381,9 @@ async function pollBoardOnce(
       // Older plugins ignore unknown tokens, so no version/capability branching is needed.
       // Blocked-run events (`approvals`, 0.18.0) share that table and cursor too — always together.
       ...(row.isEventCarrier ? { include: CARRIER_INCLUDE } : {}),
+      // Cron is gateway-wide and is consumed only by the carrier. Non-carrier boards still need their own
+      // kanban/deletion cursor, but must not rescan every profile's cron ledger.
+      ...(!row.isEventCarrier ? { exclude: "cron" } : {}),
     });
 
     if (!res.ok) {
