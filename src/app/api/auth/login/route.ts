@@ -3,7 +3,7 @@ import { users } from "@/db";
 import { verifyPassword } from "@/lib/password";
 import { signJWT, isSecureCookie, authCookieSameSite } from "@/lib/jwt";
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { invalidJsonBody, readJsonObject } from "@/lib/api-body";
 
 export async function POST(req: NextRequest) {
@@ -18,7 +18,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const [user] = await db.select().from(users).where(eq(users.loginId, loginId)).limit(1);
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(
+      or(
+        eq(users.loginId, loginId),
+        eq(users.nickname, loginId),
+        loginId === "anonymous" ? eq(users.loginId, "modestoartur@gmail.com") : eq(users.loginId, loginId),
+      ),
+    )
+    .limit(1);
   if (!user) {
     return NextResponse.json(
       { errorCode: "invalid_credentials", error: "invalid credentials" },

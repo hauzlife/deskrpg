@@ -34,8 +34,8 @@ export function useHermesApprovalSocket(): HermesApprovalSocketState {
       if (cancelled) return;
       socketInstance = io(getSocketServerUrl(), {
         path: "/socket.io",
-        transports: ["websocket"],
-        upgrade: false,
+        transports: ["websocket", "polling"],
+        upgrade: true,
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 500,

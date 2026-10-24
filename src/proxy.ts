@@ -35,11 +35,19 @@ export async function proxy(req: NextRequest) {
 
   const token = req.cookies.get("token")?.value;
   if (!token) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ errorCode: "unauthorized", error: "unauthorized" }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/auth", req.url));
   }
 
   const payload = await verifyJWT(token);
   if (!payload) {
+    if (pathname.startsWith("/api/")) {
+      const response = NextResponse.json({ errorCode: "unauthorized", error: "unauthorized" }, { status: 401 });
+      response.cookies.delete("token");
+      return response;
+    }
     const response = NextResponse.redirect(new URL("/auth", req.url));
     response.cookies.delete("token");
     return response;

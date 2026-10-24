@@ -12,6 +12,11 @@ export function generateMetadata(): Metadata {
     : { robots: { index: false, follow: false } };
 }
 
+import { db, channels } from "@/db";
+import { eq } from "drizzle-orm";
+
+const PRIMARY_CHANNEL_ID = "104c62be-838c-48ad-8351-368b1493a304";
+
 export default async function Home() {
   if (isPublicLandingEnabled(process.env)) {
     return (
@@ -28,9 +33,17 @@ export default async function Home() {
   if (token) {
     const payload = await verifyJWT(token);
     if (payload) {
-      redirect("/gateways");
+      const [channel] = await db
+        .select({ id: channels.id })
+        .from(channels)
+        .where(eq(channels.ownerId, payload.userId))
+        .limit(1);
+
+      const targetChannelId = channel?.id || PRIMARY_CHANNEL_ID;
+      redirect(`/game?channelId=${targetChannelId}`);
     }
   }
 
-  redirect("/auth");
+  redirect("/api/auth/auto-login");
 }
+

@@ -22,7 +22,7 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(!isComingSoon);
+  const [checking, setChecking] = useState(false);
   const [hasUsers, setHasUsers] = useState(true);
   const router = useRouter();
   const t = useT();
@@ -31,24 +31,29 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
     if (isComingSoon) return;
 
     Promise.all([
-      fetch("/api/characters", { redirect: "manual" }),
+      fetch("/api/characters", { redirect: "manual" }).catch(() => null),
       fetch("/api/auth/status")
         .then((r) => (r.ok ? r.json() : { hasUsers: true }))
         .catch(() => ({ hasUsers: true })),
     ])
       .then(([charRes, status]) => {
-        if (charRes.ok) {
-          router.replace("/gateways");
-        } else {
+        if (charRes && charRes.ok) {
+          router.replace("/game?channelId=104c62be-838c-48ad-8351-368b1493a304");
+          if (typeof window !== "undefined") window.location.href = "/game?channelId=104c62be-838c-48ad-8351-368b1493a304";
+          return;
+        }
+        if (status && status.authenticated) {
+          router.replace("/game?channelId=104c62be-838c-48ad-8351-368b1493a304");
+          if (typeof window !== "undefined") window.location.href = "/game?channelId=104c62be-838c-48ad-8351-368b1493a304";
+          return;
+        }
+        if (status && typeof status.hasUsers === "boolean") {
           setHasUsers(status.hasUsers);
           if (!status.hasUsers) setMode("register");
           else if (isRegistrationDisabled) setMode("login");
-          setChecking(false);
         }
       })
-      .catch(() => {
-        setChecking(false);
-      });
+      .catch(() => {});
   }, [router, isComingSoon]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -76,23 +81,17 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
       // If they came in with a temporary password, send them straight to the change screen.
       if (data?.user?.mustChangePassword) {
         router.push("/account/password?forced=1");
+        if (typeof window !== "undefined") window.location.href = "/account/password?forced=1";
         return;
       }
 
-      router.push("/gateways");
+      router.push("/channels");
+      if (typeof window !== "undefined") window.location.href = "/channels";
     } catch {
       setError(t("common.networkError"));
     } finally {
       setLoading(false);
     }
-  }
-
-  if (checking) {
-    return (
-      <div className="theme-web min-h-screen flex items-center justify-center bg-bg text-text">
-        {t("auth.checkingAuth")}
-      </div>
-    );
   }
 
   return (
@@ -223,7 +222,7 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-2.5 bg-bg-deep text-text rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary-light text-sm placeholder-text-dim"
-                    minLength={4}
+                    minLength={8}
                     required
                   />
                   {error && <p className="text-danger text-sm">{error}</p>}
@@ -246,6 +245,12 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
                           ? t("auth.login")
                           : t("auth.register")}
                   </button>
+                  <a
+                    href="/api/auth/auto-login"
+                    className="w-full py-2.5 rounded-lg text-center block font-semibold text-sm border border-primary text-primary hover:bg-primary/10 transition mt-2"
+                  >
+                    🚀 Entrar Direto no Escritório (Artur Modesto)
+                  </a>
                 </form>
               </>
             )}

@@ -11,7 +11,7 @@ import {
 } from "./gateway-health";
 
 const ok: PollOutcome = { ok: true, events: 0, pages: 1, cursor: "c", restarted: false };
-const fail = (code: string, status?: number): PollOutcome => ({
+const fail = (code: string, status?: number): Extract<PollOutcome, { ok: false }> => ({
   ok: false,
   code,
   reason: "x",

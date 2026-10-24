@@ -12,11 +12,13 @@ export function getSocketServerUrl(): string | undefined {
   const explicitUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
   if (explicitUrl) return explicitUrl;
 
-  if (process.env.NODE_ENV !== "production") return undefined;
-
   const { protocol, hostname, port } = window.location;
   const currentPort = Number.parseInt(port, 10);
-  if (!Number.isFinite(currentPort)) return undefined;
 
-  return `${protocol}//${hostname}:${currentPort + 1}`;
+  // Standalone server running directly on localhost:3000 without reverse proxy
+  if ((hostname === "localhost" || hostname === "127.0.0.1") && currentPort === 3000) {
+    return `${protocol}//${hostname}:${currentPort + 1}`;
+  }
+
+  return undefined;
 }

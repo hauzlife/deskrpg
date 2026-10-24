@@ -594,9 +594,19 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
     setInstanceId(nextId);
   }, []);
 
-  // Redirect to channel select if no channelId
+  // Default to primary office if no channelId
   useEffect(() => {
-    if (!channelId) router.replace("/channels");
+    if (!channelId) {
+      fetch("/api/channels")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          const first = data?.channels?.[0]?.id || "104c62be-838c-48ad-8351-368b1493a304";
+          router.replace(`/game?channelId=${first}`);
+        })
+        .catch(() => {
+          router.replace("/game?channelId=104c62be-838c-48ad-8351-368b1493a304");
+        });
+    }
   }, [channelId, router]);
 
   // Track player position for beforeunload save
@@ -675,8 +685,8 @@ function GamePageInner({ onFatal }: GamePageClientProps) {
       if (cancelled) return;
       socketInstance = io(getSocketServerUrl(), {
         path: "/socket.io",
-        transports: ["websocket"],
-        upgrade: false,
+        transports: ["websocket", "polling"],
+        upgrade: true,
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 500,

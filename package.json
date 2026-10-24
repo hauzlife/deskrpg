@@ -9,7 +9,7 @@
   "bugs": {
     "url": "https://github.com/dandacompany/deskrpg/issues"
   },
-  "private": false,
+  "private": true,
   "bin": {
     "deskrpg": "bin/deskrpg.js"
   },
