@@ -85,8 +85,8 @@ export default function AuthPageClient({ isComingSoon }: { isComingSoon: boolean
         return;
       }
 
-      router.push("/channels");
-      if (typeof window !== "undefined") window.location.href = "/channels";
+      router.push("/game?channelId=104c62be-838c-48ad-8351-368b1493a304");
+      if (typeof window !== "undefined") window.location.href = "/game?channelId=104c62be-838c-48ad-8351-368b1493a304";
     } catch {
       setError(t("common.networkError"));
     } finally {
